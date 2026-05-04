@@ -88,6 +88,9 @@ services:
     answer_tag: {{ services.redmine_mailbox.answer_tag | default('-- archi -- Resolving email was sent', true) }}
     imap4_port: {{ services.redmine_mailbox.imap4_port | default(993, true) }}
     mailbox_update_time: {{ services.redmine_mailbox.mailbox_update_time | default(10, true) }}
+    default_provider: {{ services.redmine_mailbox.default_provider | default('local', true) }}
+    default_model: {{ services.redmine_mailbox.default_model | default('qwen3:32b', true) }}
+    providers: {{ services.redmine_mailbox.providers | default({"local": {"enabled": true, "base_url": "http://localhost:11434", "mode": "ollama", "default_model": "llama3.2", "models": ["llama3.2"]}}) | tojson }}
   postgres:
     port: {{ services.postgres.port | default(5432, true) }}
     user: {{ services.postgres.user | default('archi', true) }}
