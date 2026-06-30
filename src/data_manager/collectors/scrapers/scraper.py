@@ -11,6 +11,32 @@ from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
+# MediaWiki namespaces that hold meta / non-content pages (not documentation).
+# Titles look like "Special:RecentChanges", "Mu2eWiki:About", "User_talk:Foo".
+_EXCLUDED_WIKI_NAMESPACES = frozenset({
+    "Special", "Talk", "User", "User_talk", "Help", "Help_talk",
+    "File", "File_talk", "MediaWiki", "MediaWiki_talk", "Template",
+    "Template_talk", "Category_talk", "Mu2eWiki", "Mu2eWiki_talk",
+})
+
+
+def is_excluded_wiki_url(url: str) -> bool:
+    """Return True for MediaWiki meta pages and raw action endpoints worth skipping."""
+    path = urlparse(url).path
+    # Raw MediaWiki entry points, e.g. /w/index.php?action=edit&...
+    if path.startswith("/w/"):
+        return True
+    marker = "/wiki/"
+    idx = path.find(marker)
+    if idx == -1:
+        return False
+    title = path[idx + len(marker):]
+    if ":" not in title:
+        return False
+    namespace = title.split(":", 1)[0].replace(" ", "_")
+    return namespace in _EXCLUDED_WIKI_NAMESPACES
+
+
 class LinkScraper:
     """
     Single scraper for all our link needs that handles Selenium and requests.
@@ -308,6 +334,8 @@ class LinkScraper:
             full = urljoin(base_url, tag["href"])
             normalized = self._normalize_url(full)
             if not normalized:
+                continue
+            if is_excluded_wiki_url(normalized):
                 continue
             if urlparse(normalized).netloc == base_hostname:
                 links.add(normalized)

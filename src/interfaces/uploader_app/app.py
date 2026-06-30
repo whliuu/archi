@@ -268,8 +268,14 @@ class FlaskAppWrapper:
         """
         Use the ScraperManager to collect and persist a single URL provided via form data.
         """
-        url = request.form.get("url")
-        depth_raw = request.form.get("depth")
+        # The UI posts JSON; fall back to form encoding for other callers.
+        data = request.get_json(silent=True) or request.form
+        url = data.get("url")
+        depth_raw = data.get("depth")
+        requires_sso = data.get("requires_sso")
+        if isinstance(requires_sso, str):
+            requires_sso = requires_sso.strip().lower() in ("1", "true", "yes", "on")
+        requires_sso = bool(requires_sso)
         depth: Optional[int] = None
         if depth_raw not in (None, ""):
             try:
@@ -282,9 +288,14 @@ class FlaskAppWrapper:
             if depth == 0:
                 depth = 1
         if url:
-            logger.info("Uploading the following URL: %s", url)
+            logger.info("Uploading the following URL: %s (sso=%s)", url, requires_sso)
             try:
-                scraped_count = self.scraper_manager.collect_links(self.persistence, link_urls=[url], max_depth=depth)
+                if requires_sso:
+                    # Route through the Selenium scraper (renders in a real
+                    # browser) — required for sites that block plain HTTP.
+                    scraped_count = self.scraper_manager.collect_sso(self.persistence, sso_urls=[url], max_depth=depth)
+                else:
+                    scraped_count = self.scraper_manager.collect_links(self.persistence, link_urls=[url], max_depth=depth)
                 self.persistence.flush_index()
                 self._update_source_status("web", state="idle", last_run=self._now_iso())
                 added_to_urls = True

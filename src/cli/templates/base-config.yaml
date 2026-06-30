@@ -225,6 +225,7 @@ data_manager:
       class: OpenAIEmbeddings
       kwargs:
         model: {{ data_manager.embedding_class_map.OpenAIEmbeddings.kwargs.model | default('text-embedding-3-small', true) }}
+      dimensions: {{ data_manager.embedding_class_map.OpenAIEmbeddings.dimensions | default(1536, true) }}
       similarity_score_reference: {{ data_manager.embedding_class_map.OpenAIEmbeddings.similarity_score_reference | default(10, true) }}
     HuggingFaceEmbeddings:
       class: HuggingFaceEmbeddings
@@ -278,16 +279,31 @@ data_manager:
         verify_urls: {{ data_manager.sources.links.html_scraper.verify_urls | default(false, true) }}
         enable_warnings: {{ data_manager.sources.links.html_scraper.enable_warnings | default(false, true) }}
       selenium_scraper:
-        enabled: {{ data_manager.sources.links.selenium_scraper.selenium_scraper.enabled | default(false, true) }}
-        visible: {{ data_manager.sources.links.selenium_scraper.selenium_scraper.visible | default(false, true) }}
+        enabled: {{ data_manager.sources.links.selenium_scraper.enabled | default(false, true) }}
+        visible: {{ data_manager.sources.links.selenium_scraper.visible | default(false, true) }}
         use_for_scraping: {{ data_manager.sources.links.selenium_scraper.use_for_scraping | default(false, true) }}
         selenium_class: {{  data_manager.sources.links.selenium_scraper.selenium_class | default('CERNSSOScraper', true)  }}
         selenium_url: {{  data_manager.sources.links.selenium_scraper.selenium_url | default('null', true)  }}
         selenium_class_map:
-          CERNSSOScraper:
-            class: {{ data_manager.sources.links.selenium_scraper.selenium_class_map.CERNSSOScraper.class | default('CERNSSOScraper', true) }}
+          {%- set class_map = data_manager.sources.links.selenium_scraper.selenium_class_map | default({}, true) %}
+          {%- if class_map %}
+          {%- for cls_name, cls_def in class_map.items() %}
+          {{ cls_name }}:
+            class: {{ cls_def.class | default(cls_name, true) }}
+            {%- if cls_def.module is defined %}
+            module: {{ cls_def.module }}
+            {%- endif %}
             kwargs:
-              headless:  {{ data_manager.sources.links.selenium_scraper.selenium_class_map.CERNSSOScraper.kwargs.headless | default(true, true) }}
+              {%- for k, v in (cls_def.kwargs | default({}, true)).items() %}
+              {{ k }}: {{ v }}
+              {%- endfor %}
+          {%- endfor %}
+          {%- else %}
+          CERNSSOScraper:
+            class: CERNSSOScraper
+            kwargs:
+              headless: true
+          {%- endif %}
     git:
       enabled: {{ data_manager.sources.git.enabled | default(true, true) }}
       visible: {{ data_manager.sources.git.visible | default(true, true) }}

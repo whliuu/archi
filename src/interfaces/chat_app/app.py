@@ -5866,6 +5866,7 @@ class FlaskAppWrapper(object):
             data = request.json or {}
             url = data.get("url", "").strip()
             depth = data.get("depth", None)
+            requires_sso = bool(data.get("requires_sso", False))
 
             if not url:
                 return jsonify({"error": "missing_url"}), 400
@@ -5881,6 +5882,9 @@ class FlaskAppWrapper(object):
             dm_payload = {"url": url}
             if depth is not None:
                 dm_payload["depth"] = str(depth)
+            if requires_sso:
+                # Route through the Selenium scraper on the data-manager side.
+                dm_payload["requires_sso"] = "true"
             resp = requests.post(
                 f"{self.data_manager_url}/document_index/upload_url",
                 data=dm_payload,

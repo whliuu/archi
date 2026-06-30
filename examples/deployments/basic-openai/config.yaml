@@ -3,7 +3,11 @@
 # The LLM is used through OpenAI.
 #
 # run with:
-# archi create --name my-archi-openai --config examples/deployments/basic-openai/config.yaml --services chatbot --hostmode
+# archi create --name my-archi-openai --config examples/deployments/basic-openai/config.yaml --services chatbot
+#
+# (Omit --hostmode on Docker Desktop for Mac/Windows — host networking is
+#  unreachable from the host there; default published ports work. --hostmode is
+#  only for native Linux hosts.)
 #
 # required env var:
 # export OPENAI_API_KEY=your_api_key

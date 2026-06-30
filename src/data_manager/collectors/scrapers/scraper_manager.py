@@ -121,18 +121,19 @@ class ScraperManager:
         self,
         persistence: PersistenceService,
         sso_urls: Optional[List[str]] = None,
-    ) -> None:
-        """Collect only SSO sources."""
+        max_depth: Optional[int] = None,
+    ) -> int:
+        """Collect only SSO sources. Returns count of resources scraped."""
         if not self.sso_enabled:
             logger.info("SSO disabled, skipping SSO scraping")
-            return
+            return 0
         self._ensure_sso_defaults()
         if not sso_urls:
-            return
+            return 0
         sso_dir = persistence.data_path / "sso"
         if not os.path.exists(sso_dir):
             os.makedirs(sso_dir, exist_ok=True)
-        self._collect_sso_from_urls(sso_urls, persistence, sso_dir)
+        return self._collect_sso_from_urls(sso_urls, persistence, sso_dir, max_depth=max_depth)
 
     def schedule_collect_links(self, persistence: PersistenceService, last_run: Optional[str] = None) -> None:
         """
@@ -194,39 +195,42 @@ class ScraperManager:
         urls: List[str],
         persistence: PersistenceService,
         output_dir: Path,
-    ) -> None:
+        max_depth: Optional[int] = None,
+    ) -> int:
         """Collect SSO-protected URLs using selenium for authentication."""
         if not self.selenium_enabled:
             logger.error("SSO scraping requires data_manager.sources.links.selenium_scraper.enabled")
-            return
+            return 0
         if not read_secret("SSO_USERNAME") or not read_secret("SSO_PASSWORD"):
             logger.error("SSO scraping requires SSO_USERNAME and SSO_PASSWORD secrets")
-            return
+            return 0
         authenticator = None
         if self.selenium_enabled:
             authenticator_class, kwargs = self._resolve_scraper()
             if authenticator_class is not None:
                 authenticator = authenticator_class(**kwargs)
-        
+
         if authenticator is None:
             logger.error("SSO collection requires a valid selenium scraper configuration")
-            return
+            return 0
 
+        total_count = 0
         try:
             for url in urls:
                 # For SSO URLs, use selenium client for authentication
                 # scrape_with_selenium determines if we use selenium for scraping too
-                self._handle_standard_url(
+                total_count += self._handle_standard_url(
                     url,
                     persistence,
                     output_dir,
-                    max_depth=self.base_depth,
+                    max_depth=max_depth if max_depth is not None else self.base_depth,
                     client=authenticator,
                     use_client_for_scraping=self.scrape_with_selenium
                 )
         finally:
             if authenticator is not None:
                 authenticator.close()
+        return total_count
 
     def _ensure_sso_defaults(self) -> None:
         if not self.selenium_config:

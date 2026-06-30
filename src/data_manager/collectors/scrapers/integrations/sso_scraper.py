@@ -17,6 +17,7 @@ from selenium.common.exceptions import TimeoutException
 
 from src.data_manager.collectors.scrapers.scraped_resource import \
     ScrapedResource, BrowserIntermediaryResult
+from src.data_manager.collectors.scrapers.scraper import is_excluded_wiki_url
 from src.utils.env import read_secret
 from src.utils.logging import get_logger
 
@@ -136,7 +137,12 @@ class SSOScraper(ABC):
                         normalized_url = normalized_url.split("?")[0]
                         if 'bin/rdiff' in normalized_url or 'bin/edit' in normalized_url or 'bin/oops' in normalized_url  or 'bin/attach' in normalized_url or 'bin/genpdf' in normalized_url or '/WebIndex' in normalized_url:
                             continue
-                        
+
+                        # Skip MediaWiki meta pages (Special:, Talk:, project
+                        # namespace, /w/ action endpoints) — not documentation.
+                        if is_excluded_wiki_url(normalized_url):
+                            continue
+
                         if not self._clear_url(normalized_url):
                             continue
                         
@@ -358,6 +364,26 @@ class CERNSSOScraper(SSOScraper):
         except Exception as e:
             logger.error(f"Error during login: {e}",exc_info=True)
             return False
+
+
+class PassthroughSeleniumScraper(SSOScraper):
+    """Render pages with a real Firefox browser without any SSO login.
+
+    Use this for sites that are not behind a login form but block plain HTTP
+    clients (e.g. a Cloudflare bot challenge, like mu2ewiki). The browser
+    executes the page's JS challenge; login() is a no-op so no credentials are
+    required or submitted.
+    """
+
+    def get_username_from_env(self):
+        return None
+
+    def get_password_from_env(self):
+        return None
+
+    def login(self):
+        # Nothing to log into; navigation alone clears JS/Cloudflare checks.
+        return True
 
 
 class SSOCollector:

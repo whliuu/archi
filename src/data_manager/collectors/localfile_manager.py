@@ -67,8 +67,14 @@ class LocalFileManager:
 
     def _iter_files(self, directory: Path) -> Iterable[Path]:
         for file_path in directory.rglob("*"):
-            if file_path.is_file():
-                yield file_path
+            if not file_path.is_file():
+                continue
+            # Skip hidden files (e.g. .gitkeep, .DS_Store) and anything nested
+            # inside a dot-directory (e.g. .git/). These are scaffolding, not
+            # documents, and have no loader -> they fail ingestion noisily.
+            if any(part.startswith(".") for part in file_path.relative_to(directory).parts):
+                continue
+            yield file_path
 
     def _persist_file(self, path: Path, persistence: PersistenceService, target_dir: Path, *, base_dir: Optional[Path]) -> None:
         try:

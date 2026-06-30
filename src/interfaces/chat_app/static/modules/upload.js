@@ -632,6 +632,10 @@ class DataUploader {
     let totalResources = 0;
     const errors = [];
 
+    // Read the SSO checkbox at scrape time so its current state wins, not
+    // whatever it was when each URL was added to the queue.
+    const ssoAtScrapeTime = document.getElementById('url-requires-sso')?.checked ?? false;
+
     try {
       for (const item of this.urlQueue) {
         const response = await fetch('/api/upload/url', {
@@ -640,7 +644,7 @@ class DataUploader {
           body: JSON.stringify({
             url: item.url,
             depth: parseInt(item.depth),
-            requires_sso: item.requiresSso
+            requires_sso: item.requiresSso || ssoAtScrapeTime
           })
         });
 
