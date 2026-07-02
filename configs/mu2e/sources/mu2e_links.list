@@ -1,0 +1,30 @@
+# mu2e shifter & operations document sources
+# ---------------------------------------------------------------------------
+# One entry per line. Lines starting with '#' are comments.
+#
+#   https://...        -> scraped as a normal web page
+#   git-https://...    -> cloned & ingested as an MkDocs/Markdown git repo
+#   sso-https://...    -> fetched via the Selenium SSO scraper (needs
+#                         selenium_scraper.enabled: true + SSO creds)
+#
+# Replace the placeholders below with the real mu2e pages/repos.
+# ---------------------------------------------------------------------------
+
+# --- mu2e wiki / public web pages ------------------------------------------
+# The mu2e wiki front page (known public landing page).
+# Prefixed sso- so it goes through the Selenium (PassthroughSeleniumScraper)
+# path — plain HTTP gets a 403 from Cloudflare's bot challenge.
+sso-https://mu2ewiki.fnal.gov/wiki/Main_Page
+# Add specific shifter / operations / run-plan pages, e.g.:
+# https://mu2ewiki.fnal.gov/wiki/Shifts
+# https://mu2ewiki.fnal.gov/wiki/Operations
+
+# --- Git / MkDocs documentation repos --------------------------------------
+# Prefix with git- . Example (replace with the real mu2e ops docs repo):
+# git-https://github.com/Mu2e/your-ops-docs.git
+
+# --- Fermilab SSO-protected pages ------------------------------------------
+# Prefix with sso- . Requires selenium_scraper.enabled: true and SSO_USERNAME /
+# SSO_PASSWORD in secrets.env. See configs/mu2e/README.md for the Fermilab SSO
+# caveat. Example:
+# sso-https://mu2e-docdb.fnal.gov/cgi-bin/sso/ShowDocument?docid=XXXX

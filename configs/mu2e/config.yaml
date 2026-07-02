@@ -1,0 +1,148 @@
+# ---------------------------------------------------------------------------
+# mu2e Shifter & Operations Assistant - Archi deployment config
+# ---------------------------------------------------------------------------
+# A retrieval-augmented chatbot that indexes mu2e shifter and operations
+# documentation (wiki pages, MkDocs/git repos, SSO-protected pages, and local
+# PDFs/Word docs) and answers shifter/ops questions with citations.
+#
+# Deploy with (from the archi repo root):
+#   archi create --name mu2e-ops \
+#     --config configs/mu2e/config.yaml \
+#     --env-file configs/mu2e/secrets.env \
+#     --services chatbot
+#
+# Notes:
+#   - chatbot auto-enables its postgres + data-manager dependencies.
+#   - Upload is built into the chat app; there is no separate `uploader` service.
+#   - Do NOT use --hostmode on Docker Desktop (Mac/Windows): host networking is
+#     unreachable from the host VM there. It is only for native Linux hosts.
+#
+# Any field not set here falls back to the defaults in
+# src/cli/templates/base-config.yaml.
+# ---------------------------------------------------------------------------
+
+name: mu2e_ops
+
+services:
+  chat_app:
+    agent_class: CMSCompOpsAgent          # the built-in ReAct RAG agent
+    agents_dir: configs/mu2e/agents       # mu2e-ops.md prompt + tools live here
+    client_timeout_seconds: 1800
+    trained_on: "mu2e shifter & operations documentation"
+
+    # --- LLM backend ---------------------------------------------------------
+    # Using the Fermilab LiteLLM gateway (litellm.fnal.gov). Only reachable
+    # from inside Fermilab's network. To go back to OpenRouter for local dev,
+    # set default_provider: openrouter and enable the openrouter block below.
+    default_provider: cern_litellm
+    default_model: "azure/claude-haiku-4-5"
+    providers:
+      cern_litellm:
+        enabled: true
+        base_url: "https://litellm.fnal.gov/"   # Fermilab LiteLLM gateway (note: no /v1)
+        default_model: "azure/claude-haiku-4-5"
+        models:
+          - "azure/claude-haiku-4-5"
+      openrouter:
+        enabled: false
+        default_model: "qwen/qwen-2.5-72b-instruct"
+        models:
+          - "qwen/qwen-2.5-72b-instruct"
+          - "meta-llama/llama-3.3-70b-instruct"
+          - "deepseek/deepseek-r1"
+      local:
+        enabled: false
+    port: 7861
+    external_port: 7861
+
+  # NOTE: There is no deployable `uploader` service in this build — document
+  # upload is built into the chat app (and the data-manager handles ingestion).
+  # The block below is left for reference only; it has no effect.
+  # uploader:
+  #   # Admin UI for hand-uploading shifter manuals / run plans at /upload
+  #   port: 7863
+  #   external_port: 7863
+
+  vectorstore:
+    backend: postgres                     # PostgreSQL + pgvector (only backend)
+
+  data_manager:
+    port: 7871
+    external_port: 7871
+    auth:
+      enabled: false                      # set true + DM_API_TOKEN for production
+
+data_manager:
+  collection_name: mu2e_ops
+  # API-based embeddings (OpenAI text-embedding-3-small). Fast and offloads
+  # vector computation from the CPU; needs OPENAI_API_KEY in secrets.env.
+  # To go fully local/key-free instead, set embedding_name: HuggingFaceEmbeddings
+  # (sentence-transformers/all-MiniLM-L6-v2 on CPU) — slower for large PDFs.
+  embedding_name: OpenAIEmbeddings
+  embedding_class_map:
+    OpenAIEmbeddings:
+      class: OpenAIEmbeddings
+      kwargs:
+        model: text-embedding-3-small
+      # text-embedding-3-small emits 1536-dim vectors. This MUST be set, or the
+      # CLI falls back to 384 (the MiniLM default) and builds a mismatched
+      # vector(384) Postgres column.
+      dimensions: 1536
+      similarity_score_reference: 10
+  # Back to finer chunks: with API embeddings the chunk count no longer drives
+  # CPU time, so prefer better retrieval granularity. (text-embedding-3-small
+  # handles up to 8191 tokens, so 1000-char chunks are embedded in full.)
+  chunk_size: 1000
+  chunk_overlap: 100
+
+  sources:
+    # 1) Web pages / wiki ----------------------------------------------------
+    links:
+      enabled: true
+      visible: true
+      base_source_depth: 1
+      input_lists:
+        - configs/mu2e/sources/mu2e_links.list
+      html_scraper:
+        reset_data: true
+        verify_urls: false
+        enable_warnings: false
+      # 2) SSO-protected pages (Selenium) ----------------------------------
+      # Pages behind Fermilab SSO. Prefix those URLs with `sso-` in the list.
+      # NOTE: the bundled CERNSSOScraper targets the CERN SSO flow; the
+      # Fermilab SSO login form differs, so this may need a custom scraper
+      # class (see configs/mu2e/README.md). Disabled by default until creds
+      # + a working scraper are in place.
+      selenium_scraper:
+        enabled: true
+        use_for_scraping: true            # fetch pages through Firefox, not plain HTTP
+        # PassthroughSeleniumScraper renders with a real browser but does NOT
+        # log in — right for mu2ewiki (Cloudflare bot challenge, public content).
+        # For genuinely SSO-protected Fermilab pages a custom login scraper is
+        # still needed (see configs/mu2e/README.md).
+        selenium_class: PassthroughSeleniumScraper
+        selenium_class_map:
+          PassthroughSeleniumScraper:
+            class: PassthroughSeleniumScraper
+            kwargs:
+              headless: true
+              max_depth: 2
+
+    sso:
+      enabled: true                       # routes sso- prefixed URLs through Selenium
+
+    # 3) Git / MkDocs documentation repos -----------------------------------
+    # Prefix repo URLs with `git-` in the link list above.
+    # Disabled for local dev: no git repos in the .list yet, and enabling it
+    # forces GIT_USERNAME/GIT_TOKEN secrets. Flip back on once you add a repo.
+    git:
+      enabled: false
+      visible: true
+
+    # 4) Local files: PDFs / Word / Markdown shifter manuals ----------------
+    # Host paths here are staged into the data volume automatically at deploy.
+    local_files:
+      enabled: true
+      visible: true
+      paths:
+        - configs/mu2e/local_docs

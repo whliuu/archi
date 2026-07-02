@@ -1,0 +1,3 @@
+# Drop mu2e shifter manuals / run plans / checklists here.
+# Supported types include: .pdf .md .txt .docx .html .json .yaml
+# Everything in this folder is staged into the data volume and indexed at deploy.
