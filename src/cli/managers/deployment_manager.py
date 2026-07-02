@@ -3,8 +3,11 @@ import shlex
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import Tuple
+
+import yaml
 
 from src.cli.utils.command_runner import CommandRunner
 from src.utils.logging import get_logger
@@ -43,24 +46,100 @@ class DeploymentManager:
             raise DeploymentError(f"Invalid compose file: {e}", 1)
         
         flags = os.environ.get("ARCHI_COMPOSE_UP_FLAGS", "--build --force-recreate --always-recreate-deps")
+
+        # Rootless podman's `depends_on` support is unreliable (podman-compose /
+        # podman start fail with "depends on container ... not found in input
+        # list" even for a single `up -d`), so the compose template omits
+        # depends_on when --podman is used and we replicate the ordering here:
+        # postgres -> (wait healthy) -> config-seed -> (wait completed) -> rest.
+        if self.use_podman:
+            self._start_deployment_staged(deployment_dir, compose_file, flags)
+            return
+
         compose_cmd = f"{self.compose_tool} -f {compose_file} up -d {flags}"
-        
+
         try:
             stdout, stderr, exit_code = CommandRunner.run_streaming(compose_cmd, cwd=deployment_dir)
-            
+
             if exit_code != 0:
                 error_msg = f"Deployment failed with exit code {exit_code}"
                 if stderr.strip():
                     error_msg += f"\nError output:\n{stderr}"
                 raise DeploymentError(error_msg, exit_code, stderr)
-            
+
             logger.info("Deployment started successfully")
-            
+
         except KeyboardInterrupt:
             logger.warning("Deployment interrupted by user")
             raise
         except subprocess.SubprocessError as e:
             raise DeploymentError(f"Failed to execute compose command: {e}", getattr(e, 'returncode', 1))
+
+    def _start_deployment_staged(self, deployment_dir: Path, compose_file: Path, flags: str) -> None:
+        """Bring services up one at a time, in dependency order, for podman."""
+        with open(compose_file, "r") as f:
+            compose_data = yaml.safe_load(f) or {}
+        services = compose_data.get("services") or {}
+
+        def up(service_name: str) -> None:
+            cmd = f"{self.compose_tool} -f {compose_file} up -d {flags} {service_name}"
+            stdout, stderr, exit_code = CommandRunner.run_streaming(cmd, cwd=deployment_dir)
+            if exit_code != 0:
+                error_msg = f"Failed to start '{service_name}' with exit code {exit_code}"
+                if stderr.strip():
+                    error_msg += f"\nError output:\n{stderr}"
+                raise DeploymentError(error_msg, exit_code, stderr)
+
+        try:
+            if "postgres" in services:
+                logger.info("Starting postgres (podman staged startup)...")
+                up("postgres")
+                container_name = services["postgres"].get("container_name", "postgres")
+                self._wait_for_healthy(container_name)
+
+            if "config-seed" in services:
+                logger.info("Running config-seed (podman staged startup)...")
+                up("config-seed")
+                container_name = services["config-seed"].get("container_name", "config-seed")
+                self._wait_for_exit(container_name)
+
+            remaining = [name for name in services if name not in ("postgres", "config-seed")]
+            for service_name in remaining:
+                logger.info(f"Starting {service_name} (podman staged startup)...")
+                up(service_name)
+
+            logger.info("Deployment started successfully")
+        except KeyboardInterrupt:
+            logger.warning("Deployment interrupted by user")
+            raise
+
+    def _wait_for_healthy(self, container_name: str, timeout: int = 120, interval: int = 3) -> None:
+        deadline = time.monotonic() + timeout
+        cmd = f"podman inspect --format {{{{.State.Health.Status}}}} {container_name}"
+        while time.monotonic() < deadline:
+            stdout, stderr, exit_code = CommandRunner.run_simple(cmd)
+            status = stdout.strip()
+            if status == "healthy":
+                return
+            if status == "unhealthy":
+                raise DeploymentError(f"Container '{container_name}' became unhealthy", 1, stderr)
+            time.sleep(interval)
+        raise DeploymentError(f"Timed out waiting for '{container_name}' to become healthy", 1)
+
+    def _wait_for_exit(self, container_name: str, timeout: int = 120, interval: int = 3) -> None:
+        deadline = time.monotonic() + timeout
+        status_cmd = f"podman inspect --format {{{{.State.Status}}}} {container_name}"
+        exit_cmd = f"podman inspect --format {{{{.State.ExitCode}}}} {container_name}"
+        while time.monotonic() < deadline:
+            stdout, stderr, exit_code = CommandRunner.run_simple(status_cmd)
+            status = stdout.strip()
+            if status == "exited":
+                stdout, stderr, exit_code = CommandRunner.run_simple(exit_cmd)
+                if stdout.strip() != "0":
+                    raise DeploymentError(f"Container '{container_name}' exited with code {stdout.strip()}", 1, stderr)
+                return
+            time.sleep(interval)
+        raise DeploymentError(f"Timed out waiting for '{container_name}' to complete", 1)
     
     def stop_deployment(self, deployment_dir: Path) -> None:
         """Stop the deployment"""

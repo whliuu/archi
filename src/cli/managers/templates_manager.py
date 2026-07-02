@@ -516,6 +516,9 @@ class TemplateManager:
 
         with open(dest, "w") as f:
             f.write(init_sql)
+        # Rootless podman + SELinux needs this world-readable so the bind-mounted
+        # container can read it (paired with the :z mount label in base-compose.yaml).
+        os.chmod(dest, 0o644)
         logger.debug(f"Wrote PostgreSQL init script to {dest}")
 
 

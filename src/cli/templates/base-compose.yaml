@@ -8,7 +8,7 @@ services:
       args:
         APP_VERSION: {{ app_version }}
     container_name: {{ data_manager_container_name }}
-    {% if postgres_enabled -%}
+    {% if postgres_enabled and not use_podman -%}
     depends_on:
       postgres:
         condition: service_healthy
@@ -62,7 +62,7 @@ services:
     env_file:
       - .env
     volumes:
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql{{ ':z' if use_podman else '' }}
       - {{ postgres_volume_name }}:/var/lib/postgresql/data
     logging:
       options:
@@ -86,9 +86,11 @@ services:
       args:
         APP_VERSION: {{ app_version }}
     container_name: {{ name }}-config-seed
+    {% if not use_podman -%}
     depends_on:
       postgres:
         condition: service_healthy
+    {% endif -%}
     environment:
       PGHOST: {{ 'localhost' if host_mode else 'postgres' }}
       PGPORT: {{ postgres_port }}
@@ -118,7 +120,7 @@ services:
       args:
         APP_VERSION: {{ app_version }}
     container_name: {{ chatbot_container_name }}
-    {% if postgres_enabled -%}
+    {% if postgres_enabled and not use_podman -%}
     depends_on:
       postgres:
         condition: service_healthy
@@ -226,7 +228,7 @@ services:
       context: .
       dockerfile: archi_code/cli/templates/dockerfiles/Dockerfile-grafana
     container_name: {{ grafana_container_name }}
-    {% if postgres_enabled -%}
+    {% if postgres_enabled and not use_podman -%}
     depends_on:
       postgres:
         condition: service_healthy
@@ -263,7 +265,7 @@ services:
     build:
       context: .
       dockerfile: archi_code/cli/templates/dockerfiles/Dockerfile-grader{{ '-gpu' if gpu_ids else '' }}
-    {% if postgres_enabled -%}
+    {% if postgres_enabled and not use_podman -%}
     depends_on:
       postgres:
         condition: service_healthy
@@ -351,7 +353,7 @@ services:
       context: .
       dockerfile: archi_code/cli/templates/dockerfiles/Dockerfile-piazza
     container_name: {{ piazza_container_name }}
-    {% if postgres_enabled -%}
+    {% if postgres_enabled and not use_podman -%}
     depends_on:
       postgres:
         condition: service_healthy
@@ -402,7 +404,7 @@ services:
       dockerfile: archi_code/cli/templates/dockerfiles/Dockerfile-mattermost{{ '-gpu' if gpu_ids else '' }}
       args:
         TAG: {{ mattermost_tag }}
-    {% if postgres_enabled -%}
+    {% if postgres_enabled and not use_podman -%}
     depends_on:
       postgres:
         condition: service_healthy
@@ -479,7 +481,7 @@ services:
       args:
         APP_VERSION: {{ app_version }}
     container_name: {{ jira_ticket_responder_container_name }}
-    {% if postgres_enabled -%}
+    {% if postgres_enabled and not use_podman -%}
     depends_on:
       postgres:
         condition: service_healthy
@@ -531,7 +533,7 @@ services:
       context: .
       dockerfile: archi_code/cli/templates/dockerfiles/Dockerfile-redmine{{ '-gpu' if gpu_ids else '' }}
     container_name: {{ redmine_mailer_container_name }}-redmine
-    {% if postgres_enabled -%}
+    {% if postgres_enabled and not use_podman -%}
     depends_on:
       postgres:
         condition: service_healthy
@@ -595,7 +597,7 @@ services:
       context: .
       dockerfile: archi_code/cli/templates/dockerfiles/Dockerfile-mailbox{{ '-gpu' if gpu_ids else '' }}
     container_name: {{ redmine_mailer_container_name }}-mailer
-    {% if postgres_enabled -%}
+    {% if postgres_enabled and not use_podman -%}
     depends_on:
       postgres:
         condition: service_healthy
@@ -660,7 +662,7 @@ services:
       context: .
       dockerfile: archi_code/cli/templates/dockerfiles/Dockerfile-benchmarks{{ '-gpu' if gpu_ids else '' }}
     container_name: {{ benchmarking_container_name }}
-    {% if postgres_enabled -%}
+    {% if postgres_enabled and not use_podman -%}
     depends_on:
       postgres:
         condition: service_healthy
