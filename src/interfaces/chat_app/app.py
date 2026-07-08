@@ -1087,8 +1087,15 @@ class ChatWrapper:
         
         version = os.getenv("APP_VERSION", "unknown")
 
+        # For authenticated users, scope the conversation solely by user_id and
+        # leave client_id NULL. The browser-generated client_id is shared by all
+        # accounts using the same browser, so storing it here would let the
+        # `user_id = %s OR client_id = %s` list/get queries leak conversations
+        # between distinct logged-in users. Anonymous sessions keep client_id.
+        stored_client_id = None if user_id else client_id
+
         # title, created_at, last_message_at, client_id, version, user_id
-        insert_tup = (title, now, now, client_id, version, user_id)
+        insert_tup = (title, now, now, stored_client_id, version, user_id)
 
         # create connection to database (use local vars for thread safety)
         conn = psycopg2.connect(**self.pg_config)
@@ -2485,8 +2492,14 @@ class FlaskAppWrapper(object):
         self.auth_enabled = auth_config.get('enabled', False)
         self.sso_enabled = auth_config.get('sso', {}).get('enabled', False)
         self.basic_auth_enabled = auth_config.get('basic', {}).get('enabled', False)
-        
-        logger.info(f"Auth enabled: {self.auth_enabled}, SSO: {self.sso_enabled}, Basic: {self.basic_auth_enabled}")
+        # Usernames granted the 'admin' role on basic-auth login (case-insensitive).
+        self.admin_users = {
+            str(u).strip().lower()
+            for u in (auth_config.get('admin_users') or [])
+            if str(u).strip()
+        }
+
+        logger.info(f"Auth enabled: {self.auth_enabled}, SSO: {self.sso_enabled}, Basic: {self.basic_auth_enabled}, admin_users: {len(self.admin_users)}")
         
         if self.sso_enabled:
             self._setup_sso()
@@ -2712,14 +2725,33 @@ class FlaskAppWrapper(object):
             password = request.form.get('password')
             
             if check_credentials(username, password, self.salt, self.app.config['ACCOUNTS_FOLDER']):
+                is_admin = (username or '').strip().lower() in self.admin_users
+                roles = ['admin'] if is_admin else ['base-user']
+                basic_user_id = f"basic:{username}"
+
+                # Upsert the basic-auth user into the users table so that
+                # conversation_metadata can reference user_id via its FK
+                # constraint (mirrors the SSO/bearer login paths).
+                try:
+                    user_service = UserService(pg_config=self.pg_config)
+                    user_service.get_or_create_user(
+                        user_id=basic_user_id,
+                        auth_provider='basic',
+                        display_name=username,
+                        email=username,
+                    )
+                except Exception as ue:
+                    logger.warning(f"Failed to upsert basic-auth user {basic_user_id} into users table: {ue}")
+
                 self._set_user_session(
                     email=username,
                     name=username,
                     username=username,
+                    user_id=basic_user_id,
                     auth_method='basic',
-                    roles=[]
+                    roles=roles
                 )
-                logger.info(f"Basic auth login successful for user: {username}")
+                logger.info(f"Basic auth login successful for user: {username} (roles={roles})")
                 return redirect(url_for('index'))
             else:
                 flash('Invalid username or password.', 'error')

@@ -370,22 +370,42 @@ class PostgresVectorStore(VectorStore):
         *,
         semantic_weight: float = 0.7,
         bm25_weight: float = 0.3,
+        rrf_k: int = 60,
         **kwargs: Any,
     ) -> List[Tuple[Document, float]]:
         """
-        Hybrid search combining semantic similarity and BM25 full-text search.
-        
+        Hybrid search combining semantic similarity and BM25 full-text search
+        via Reciprocal Rank Fusion (RRF).
+
+        Fusion is done on *ranks*, not raw scores. Combining raw cosine
+        similarity (bounded ~[0,1]) with raw BM25 scores (unbounded) linearly
+        let BM25 dominate regardless of the weights; RRF sidesteps the scale
+        mismatch by scoring each document as
+
+            semantic_weight / (rrf_k + semantic_rank)
+          + bm25_weight     / (rrf_k + bm25_rank)
+
+        so the weights are meaningful and comparable. Each modality also pulls
+        an index-accelerated candidate pool (HNSW for semantic, BM25 index for
+        full-text) before fusing, instead of scanning the whole collection.
+
         Args:
             query: Query text
             k: Number of results to return
-            semantic_weight: Weight for semantic similarity (0-1)
-            bm25_weight: Weight for BM25 score (0-1)
+            semantic_weight: Weight for the semantic rank contribution
+            bm25_weight: Weight for the BM25 rank contribution
+            rrf_k: RRF damping constant (larger => flatter rank weighting)
             **kwargs: Additional filters
-        
+
         Returns:
             List of (Document, combined_score) tuples
         """
         logger.debug("Performing hybrid search: query='%s', k=%d", query, k)
+
+        # Pull a wider candidate pool from each modality than we ultimately
+        # return, so fusion has something to reconcile. Bounded below so small k
+        # still fuses over a meaningful set.
+        candidate_pool = max(50, k * 4)
 
         query_embedding = self._embedding_function.embed_query(query)
         embedding_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
@@ -432,32 +452,70 @@ class PostgresVectorStore(VectorStore):
                 # Use pg_textsearch BM25 operator with explicit index target
                 bm25_score_expr = f"c.chunk_text <@> to_bm25query(%s, '{bm25_index_name}')"
 
+                # Each modality selects its own index-accelerated top-`candidate_pool`
+                # (HNSW via `ORDER BY embedding <op> q LIMIT n`, BM25 via its index),
+                # then ROW_NUMBER assigns a per-modality rank over that small pool.
+                # The two ranked lists are fused with RRF in `fused`.
                 query_sql = f"""
-                    WITH scored AS (
-                        SELECT 
-                            c.id,
-                            c.chunk_text,
-                            c.metadata,
-                            1.0 - (c.embedding {self._distance_op} %s::vector) AS semantic_score,
-                            {bm25_score_expr} AS bm25_score,
-                            d.resource_hash,
-                            d.display_name,
-                            d.source_type,
-                            d.url
+                    WITH semantic_pool AS (
+                        SELECT c.id, (c.embedding {self._distance_op} %s::vector) AS dist
                         FROM document_chunks c
                         LEFT JOIN documents d ON c.document_id = d.id
                         WHERE {where_sql}
+                        ORDER BY c.embedding {self._distance_op} %s::vector ASC
+                        LIMIT %s
+                    ),
+                    semantic AS (
+                        SELECT id, ROW_NUMBER() OVER (ORDER BY dist ASC) AS sem_rank
+                        FROM semantic_pool
+                    ),
+                    bm25_pool AS (
+                        SELECT c.id, ({bm25_score_expr}) AS bm25_score
+                        FROM document_chunks c
+                        LEFT JOIN documents d ON c.document_id = d.id
+                        WHERE {where_sql}
+                        ORDER BY ({bm25_score_expr}) DESC
+                        LIMIT %s
+                    ),
+                    bm25 AS (
+                        SELECT id, ROW_NUMBER() OVER (ORDER BY bm25_score DESC) AS bm25_rank
+                        FROM bm25_pool
+                    ),
+                    fused AS (
+                        SELECT
+                            COALESCE(s.id, b.id) AS id,
+                            COALESCE(%s / (%s + s.sem_rank), 0.0)
+                            + COALESCE(%s / (%s + b.bm25_rank), 0.0) AS combined_score
+                        FROM semantic s
+                        FULL OUTER JOIN bm25 b ON s.id = b.id
                     )
-                    SELECT 
-                        *,
-                        (semantic_score * %s + COALESCE(bm25_score, 0) * %s) AS combined_score
-                    FROM scored
-                    ORDER BY combined_score DESC
+                    SELECT
+                        c.id,
+                        c.chunk_text,
+                        c.metadata,
+                        f.combined_score,
+                        d.resource_hash,
+                        d.display_name,
+                        d.source_type,
+                        d.url
+                    FROM fused f
+                    JOIN document_chunks c ON c.id = f.id
+                    LEFT JOIN documents d ON c.document_id = d.id
+                    ORDER BY f.combined_score DESC
                     LIMIT %s
                 """
 
-                # Params order: embedding, collection (+ any filters), query, semantic_weight, bm25_weight, k
-                all_params = [embedding_str] + params + [query, semantic_weight, bm25_weight, k]
+                # Placeholder order must match the SQL text exactly:
+                #  semantic_pool: embedding(SELECT), <where params>, embedding(ORDER BY), pool
+                #  bm25_pool:     query(SELECT),     <where params>, query(ORDER BY),     pool
+                #  fused:         semantic_weight, rrf_k, bm25_weight, rrf_k
+                #  final:         k
+                all_params = (
+                    [embedding_str] + params + [embedding_str, candidate_pool]
+                    + [query] + params + [query, candidate_pool]
+                    + [float(semantic_weight), rrf_k, float(bm25_weight), rrf_k]
+                    + [k]
+                )
                 cursor.execute(query_sql, all_params)
                 rows = cursor.fetchall()
         finally:

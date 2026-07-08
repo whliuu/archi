@@ -141,6 +141,9 @@ services:
     {% if services.chat_app.auth.auth_roles is defined %}
       auth_roles: {{ services.chat_app.auth.auth_roles | tojson }}
     {% endif %}
+    {% if services.chat_app.auth.admin_users is defined %}
+      admin_users: {{ services.chat_app.auth.admin_users | tojson }}
+    {% endif %}
     alerts:
       managers:
         {%- for manager in services.chat_app.alerts.managers | default([], true) %}

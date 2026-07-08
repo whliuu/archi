@@ -23,6 +23,13 @@
 
 name: mu2e_ops
 
+global:
+  # Store the basic-auth accounts file on the persistent archi-data volume
+  # (mounted at /root/data/ in both chatbot and data-manager). The default
+  # /root/.accounts/ lives in the container's writable layer and is wiped on
+  # every `archi create --force` redeploy, which deletes all registered users.
+  ACCOUNTS_PATH: "/root/data/.accounts/"
+
 services:
   chat_app:
     agent_class: CMSCompOpsAgent          # the built-in ReAct RAG agent
@@ -51,6 +58,27 @@ services:
         enabled: true
       sso:
         enabled: false
+      # Usernames that get full admin rights (Data tab, document upload, source
+      # management, database viewer) when they log in. Everyone else is a
+      # normal chat-only user. Edit this list to your real admin username(s).
+      admin_users:
+        - admin
+        - whliuu
+      # Role -> permission model. Admins get the wildcard; base-user (every
+      # non-admin) gets NO management permissions. NOTE: chat/retrieval is NOT
+      # permission-gated, so base-user still gets full RAG answers over the
+      # whole indexed corpus. To let regular users also BROWSE the Data tab,
+      # add 'documents:view' to base-user's permissions below.
+      auth_roles:
+        app_name: archi-mu2e
+        default_role: base-user
+        roles:
+          admin:
+            description: Full administrative access
+            permissions: ['*']
+          base-user:
+            description: Regular shifter — chat only
+            permissions: []
 
     # --- LLM backend ---------------------------------------------------------
     # Using the Fermilab LiteLLM gateway (litellm.fnal.gov). Only reachable

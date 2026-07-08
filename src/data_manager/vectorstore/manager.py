@@ -10,7 +10,7 @@ import psycopg2
 import psycopg2.extras
 from .loader_utils import select_loader
 from .postgres_vectorstore import PostgresVectorStore
-from langchain_text_splitters.character import CharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from src.data_manager.collectors.utils.catalog_postgres import PostgresCatalogService
 from src.utils.env import read_secret
@@ -72,9 +72,16 @@ class VectorStoreManager:
         embedding_kwargs = embedding_entry.get("kwargs", {})
         self.embedding_model = embedding_class(**embedding_kwargs)
 
-        self.text_splitter = CharacterTextSplitter(
+        # RecursiveCharacterTextSplitter (not CharacterTextSplitter): the latter
+        # splits on a single separator ("\n\n" by default), so PDF/HTML text
+        # without blank-line paragraph breaks produced oversized, topic-mixed
+        # chunks that blurred the embeddings. The recursive splitter walks a
+        # separator hierarchy (paragraph -> line -> sentence -> word) so every
+        # chunk lands near chunk_size and chunk_overlap actually takes effect.
+        self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=self._data_manager_config["chunk_size"],
             chunk_overlap=self._data_manager_config["chunk_overlap"],
+            separators=["\n\n", "\n", ". ", " ", ""],
         )
 
         self.stemmer = None
