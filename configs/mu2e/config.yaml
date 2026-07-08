@@ -30,6 +30,28 @@ services:
     client_timeout_seconds: 1800
     trained_on: "mu2e shifter & operations documentation"
 
+    # --- Authentication ------------------------------------------------------
+    # Username/password login. Each user gets their own private chat history
+    # (conversations are keyed to the logged-in username). No external IdP.
+    #
+    # Required secrets (in secrets.env):
+    #   FLASK_UPLOADER_APP_SECRET_KEY  - signs session cookies; MUST be stable
+    #                                    or every restart logs all users out.
+    #   UPLOADER_SALT                  - salt for hashing account passwords.
+    # Create accounts (on the deployment host, inside the venv/container):
+    #   python -m src.bin.service_create_account
+    #
+    # Per-user LLM keys: once logged in, each user opens the provider settings
+    # in the chat UI and pastes their OWN Fermilab LiteLLM key (a personal
+    # litellm.fnal.gov virtual key). It is stored in that user's session and
+    # used only for their requests, so usage bills to them, not a shared key.
+    auth:
+      enabled: true
+      basic:
+        enabled: true
+      sso:
+        enabled: false
+
     # --- LLM backend ---------------------------------------------------------
     # Using the Fermilab LiteLLM gateway (litellm.fnal.gov). Only reachable
     # from inside Fermilab's network. To go back to OpenRouter for local dev,

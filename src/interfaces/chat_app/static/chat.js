@@ -2013,7 +2013,7 @@ const UI = {
         <div class="messages-empty">
           <img class="messages-empty-logo" src="/static/images/archi-logo.png" alt="archi logo">
           <h2 class="messages-empty-title">How can I help you today?</h2>
-          <p class="messages-empty-subtitle">Ask me anything about CMS Computing Operations. I'm here to assist you.</p>
+          <p class="messages-empty-subtitle">Ask me anything about Mu2e Operations. I'm here to assist you.</p>
         </div>`;
       return;
     }

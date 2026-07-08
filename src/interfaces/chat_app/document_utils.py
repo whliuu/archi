@@ -84,7 +84,10 @@ def add_username_password(username, password, salt, accounts_path, file_name='ac
     Keys in the yaml file are usernames and passwords are the hashes of the password
     plus the salt.
 
-    Adding a username and password for an existing username will overwrite the password
+    Existing usernames are never overwritten.
+
+    Returns:
+        True if a new account was created, False if the username already existed.
     """
     hash = simple_hash(password + salt)
     try:
@@ -97,7 +100,7 @@ def add_username_password(username, password, salt, accounts_path, file_name='ac
     # check if the username already exists
     if username in accounts:
         logger.info(f"Username '{username}' already exists.")
-        return
+        return False
 
     # add the new username and hashed password to the accounts dictionary
     accounts[username] = hash
@@ -105,6 +108,8 @@ def add_username_password(username, password, salt, accounts_path, file_name='ac
     # write the updated dictionary back to the YAML file
     with open(os.path.join(accounts_path, file_name), 'w') as file:
         yaml.dump(accounts, file)
+
+    return True
 
 
 def check_credentials(username, password, salt, accounts_path, file_name='accounts.yaml'):

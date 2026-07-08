@@ -2625,6 +2625,8 @@ class FlaskAppWrapper(object):
         if self.auth_enabled:
             logger.info("Adding unified authentication endpoints")
             self.add_endpoint('/login', 'login', self.login, methods=['GET', 'POST'])
+            if self.basic_auth_enabled:
+                self.add_endpoint('/register', 'register', self.register, methods=['GET', 'POST'])
             self.add_endpoint('/logout', 'logout', self.logout)
             self.add_endpoint('/auth/user', 'get_user', self.get_user, methods=['GET'])
             self.add_endpoint('/api/permissions', 'get_permissions', self.get_permissions, methods=['GET'])
@@ -2720,12 +2722,72 @@ class FlaskAppWrapper(object):
                 logger.info(f"Basic auth login successful for user: {username}")
                 return redirect(url_for('index'))
             else:
-                flash('Invalid credentials')
-        
+                flash('Invalid username or password.', 'error')
+
         # Render login page with available auth methods
-        return render_template('login.html', 
-                             sso_enabled=self.sso_enabled, 
-                             basic_auth_enabled=self.basic_auth_enabled)
+        return render_template('login.html',
+                             sso_enabled=self.sso_enabled,
+                             basic_auth_enabled=self.basic_auth_enabled,
+                             registration_enabled=self.basic_auth_enabled)
+
+    def register(self):
+        """Self-service account creation, gated by a shared registration code.
+
+        Anyone with the REGISTRATION_CODE secret can create a username/password
+        account that is usable immediately. Accounts are stored in the same
+        accounts file used by basic-auth login; existing usernames are never
+        overwritten.
+        """
+        import hmac
+
+        if session.get('logged_in'):
+            return redirect(url_for('index'))
+        if not self.basic_auth_enabled:
+            return redirect(url_for('login'))
+
+        def _render():
+            return render_template('login.html',
+                                   sso_enabled=self.sso_enabled,
+                                   basic_auth_enabled=self.basic_auth_enabled,
+                                   registration_enabled=True,
+                                   show_register=True)
+
+        if request.method != 'POST':
+            return _render()
+
+        username = (request.form.get('username') or '').strip()
+        password = request.form.get('password') or ''
+        confirm = request.form.get('confirm_password') or ''
+        code = request.form.get('registration_code') or ''
+        expected_code = read_secret('REGISTRATION_CODE') or ''
+
+        if not expected_code:
+            logger.error("Registration attempted but REGISTRATION_CODE secret is not set")
+            flash('Account registration is not configured. Contact an administrator.', 'error')
+            return _render()
+        if not username or not password:
+            flash('Username and password are required.', 'error')
+            return _render()
+        if not hmac.compare_digest(code, expected_code):
+            flash('Invalid registration code.', 'error')
+            return _render()
+        if password != confirm:
+            flash('Passwords do not match.', 'error')
+            return _render()
+        if len(password) < 8:
+            flash('Password must be at least 8 characters.', 'error')
+            return _render()
+
+        created = add_username_password(
+            username, password, self.salt, self.app.config['ACCOUNTS_FOLDER']
+        )
+        if not created:
+            flash('That username is already taken.', 'error')
+            return _render()
+
+        logger.info(f"New account registered: {username}")
+        flash('Account created. You can now sign in.', 'success')
+        return redirect(url_for('login'))
 
     def logout(self):
         """Unified logout endpoint for all auth methods"""
