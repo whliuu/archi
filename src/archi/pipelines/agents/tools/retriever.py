@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 from typing import Callable, Iterable, Optional, Sequence, Tuple
 
 from langchain.tools import tool
@@ -41,10 +43,14 @@ def _format_documents_for_llm(
 
     snippets = []
     for idx, (doc, score) in enumerate(docs[:max_documents], start=1):
+        # Prefer the human-readable name: a bare "281...html" filename tells the
+        # model nothing about what it is reading or how to cite it.
         source = (
-            doc.metadata.get("filename")
+            doc.metadata.get("display_name")
+            or doc.metadata.get("filename")
             or "unknown source"
         )
+        url = doc.metadata.get("url")
         hash = (
             doc.metadata.get("resource_hash")
             or "n/a"
@@ -52,8 +58,17 @@ def _format_documents_for_llm(
         text = doc.page_content.strip()
         if len(text) > max_chars:
             text = f"{text[:max_chars].rstrip()}..."
-        header = f"[{idx}] {source} (hash={hash})"
-        footer = f"Score: {score:.4f}" if isinstance(score, (float, int)) else "Score: n/a"
+        header = f"[{idx}] {source}"
+        if url:
+            header += f" <{url}>"
+        header += f" (hash={hash})"
+        # Postgres returns the RRF combined_score as numeric -> Decimal, which is
+        # neither float nor int, so a narrower check silently prints "n/a" and
+        # strips the model of any relevance signal.
+        if isinstance(score, (int, float, Decimal)) and not isinstance(score, bool):
+            footer = f"Score: {float(score):.4f}"
+        else:
+            footer = "Score: n/a"
         snippets.append(f"{header}\n{footer}\n{text}")
 
     return "\n\n".join(snippets)

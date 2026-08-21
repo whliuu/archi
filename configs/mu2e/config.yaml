@@ -48,10 +48,12 @@ services:
     # Create accounts (on the deployment host, inside the venv/container):
     #   python -m src.bin.service_create_account
     #
-    # Per-user LLM keys: once logged in, each user opens the provider settings
-    # in the chat UI and pastes their OWN Fermilab LiteLLM key (a personal
-    # litellm.fnal.gov virtual key). It is stored in that user's session and
-    # used only for their requests, so usage bills to them, not a shared key.
+    # LLM keys: NOT required any more. The default backend is Fermilab's
+    # self-hosted vLLM (GPT-OSS 120B), which is keyless, so a freshly
+    # registered shifter can chat immediately. Per-user BYOK still works for
+    # the optional cern_litellm/Claude route: a user opens the provider
+    # settings in the chat UI and pastes their OWN litellm.fnal.gov virtual
+    # key; it is stored in that user's session and billed to them.
     auth:
       enabled: true
       basic:
@@ -81,12 +83,30 @@ services:
             permissions: []
 
     # --- LLM backend ---------------------------------------------------------
-    # Using the Fermilab LiteLLM gateway (litellm.fnal.gov). Only reachable
-    # from inside Fermilab's network. To go back to OpenRouter for local dev,
-    # set default_provider: openrouter and enable the openrouter block below.
-    default_provider: cern_litellm
-    default_model: "azure/claude-haiku-4-5"
+    # DEFAULT FOR EVERYONE: GPT-OSS 120B on Fermilab's self-hosted vLLM
+    # (vllm.fnal.gov). It is OpenAI-compatible and needs NO API key, so every
+    # logged-in shifter gets working answers out of the box without pasting a
+    # personal LiteLLM key. Only reachable from inside Fermilab's network.
+    #
+    # archi has no dedicated "vllm" provider; the built-in `local` provider in
+    # openai_compat mode IS the vLLM path (src/archi/providers/local_provider.py
+    # -> _get_openai_compat_model), so `local` below means "Fermilab vLLM", not
+    # a laptop Ollama.
+    #
+    # cern_litellm stays enabled but non-default: users who want Claude and
+    # have their own litellm.fnal.gov key can still pick it in the provider
+    # settings. To go back to OpenRouter for local dev, set
+    # default_provider: openrouter and enable the openrouter block below.
+    default_provider: local
+    default_model: "gpt-oss:120b"
     providers:
+      local:
+        enabled: true
+        mode: openai_compat                     # ChatOpenAI against a vLLM server
+        base_url: "https://vllm.fnal.gov/v1"    # note: WITH /v1 (unlike litellm below)
+        default_model: "gpt-oss:120b"
+        models:
+          - "gpt-oss:120b"
       cern_litellm:
         enabled: true
         base_url: "https://litellm.fnal.gov/"   # Fermilab LiteLLM gateway (note: no /v1)
@@ -100,8 +120,6 @@ services:
           - "qwen/qwen-2.5-72b-instruct"
           - "meta-llama/llama-3.3-70b-instruct"
           - "deepseek/deepseek-r1"
-      local:
-        enabled: false
     port: 7861
     external_port: 7861
 
@@ -124,6 +142,14 @@ services:
 
 data_manager:
   collection_name: mu2e_ops
+  # Do NOT wipe the vectorstore on every data-manager start. The template
+  # default is true, which truncates document_chunks and re-embeds the whole
+  # corpus each boot. With this false, update_vectorstore() does an incremental
+  # diff: stale chunks removed, only new resource_hashes embedded.
+  # CAVEAT: resource_hash is md5(url), so an EDITED page at an unchanged URL
+  # keeps its hash and will NOT be re-embedded. To pick up edits, delete those
+  # documents first, or flip this back to true for one restart.
+  reset_collection: false
   # API-based embeddings (OpenAI text-embedding-3-small). Fast and offloads
   # vector computation from the CPU; needs OPENAI_API_KEY in secrets.env.
   # To go fully local/key-free instead, set embedding_name: HuggingFaceEmbeddings
@@ -144,6 +170,18 @@ data_manager:
   # handles up to 8191 tokens, so 1000-char chunks are embedded in full.)
   chunk_size: 1000
   chunk_overlap: 100
+
+  # Retrieval weighting. The template defaults are bm25 0.6 / semantic 0.4,
+  # which lets keyword noise outrank meaning: on a Mu2e wiki, tokens like
+  # "mu2e" and "computing" appear on nearly every page, so the BM25 pool fills
+  # with near-random chunks and (being weighted higher) wins the RRF fusion.
+  # That is why recall degraded as more pages were scraped. Favour semantic;
+  # BM25 still earns its keep for exact identifiers (TrkAna, error strings).
+  retrievers:
+    hybrid_retriever:
+      num_documents_to_retrieve: 8
+      bm25_weight: 0.3
+      semantic_weight: 0.7
 
   sources:
     # 1) Web pages / wiki ----------------------------------------------------

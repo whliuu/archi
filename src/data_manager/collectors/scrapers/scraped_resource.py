@@ -62,9 +62,13 @@ class ScrapedResource(BaseResource):
     def _format_link_display(link: str) -> str:
         parsed_link = urlparse(link)
         display_name = parsed_link.hostname or link
-        if parsed_link.path and parsed_link.path != '/':
-            first_path = parsed_link.path.strip('/').split('/')[0]
-            display_name += f"/{first_path}"
+        # Keep the whole path, not just its first segment: MediaWiki and most
+        # docs sites carry the page identity in a later segment, so truncating
+        # collapses every page to one name and the chat app's citation
+        # de-duplication (keyed on display_name) drops all but one source.
+        path = (parsed_link.path or '').strip('/')
+        if path:
+            display_name += f"/{path}"
         return display_name
 
     def _safe_relative_path(self) -> Optional[Path]:
