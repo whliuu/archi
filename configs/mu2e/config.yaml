@@ -30,6 +30,48 @@ global:
   # every `archi create --force` redeploy, which deletes all registered users.
   ACCOUNTS_PATH: "/root/data/.accounts/"
 
+# --- MCP tool servers ------------------------------------------------------
+# Remote MCP servers hosted on mu2eaigpvm01 (registry: http://mu2eaigpvm01.fnal.gov:8000/list).
+# Only reachable from inside the Fermilab network, so the chatbot container
+# must run on a Fermilab machine. Agents opt in by listing `mcp` in their tools.
+#
+# Token-protected servers read the token from secrets.env via ${SECRET_NAME}
+# in `headers` (expanded at runtime, never stored in the config DB). If the
+# secret is unset, that server is skipped with a warning; the rest still load.
+#
+# NOTE: every chatbot user shares the single token below, so all shifters get
+# that token owner's ECL / run-DB access.
+mcp_servers:
+  arxiv:
+    transport: streamable_http
+    url: http://mu2eaigpvm01.fnal.gov:8003/mcp
+  inspirehep:
+    transport: streamable_http
+    url: http://mu2eaigpvm01.fnal.gov:8004/mcp
+  dqm:
+    transport: streamable_http
+    url: http://mu2eaigpvm01.fnal.gov:8001/mcp
+  metacat:
+    transport: streamable_http
+    url: http://mu2eaigpvm01.fnal.gov:8002/mcp
+  ecl:
+    transport: streamable_http
+    url: http://mu2eaigpvm01.fnal.gov:8005/mcp
+    headers:
+      Authorization: "Bearer ${MU2E_MCP_TOKEN}"
+  runs:
+    transport: streamable_http
+    url: http://mu2eaigpvm01.fnal.gov:8006/mcp
+    headers:
+      Authorization: "Bearer ${MU2E_MCP_TOKEN}"
+  # Not enabled: `memory` has write tools and stores documents under the token
+  # owner, which every chatbot user would share. `registry` only lists servers.
+  # memory:
+  #   transport: streamable_http
+  #   url: http://mu2eaigpvm01.fnal.gov:8007/mcp
+  #   headers:
+  #     Authorization: "Bearer ${MU2E_MCP_TOKEN}"
+
 services:
   chat_app:
     agent_class: CMSCompOpsAgent          # the built-in ReAct RAG agent

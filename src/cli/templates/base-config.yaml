@@ -23,6 +23,9 @@ mcp_servers:
     {%- if server_config.args is defined %}
     args: {{ server_config.args | tojson }}
     {%- endif %}
+    {%- if server_config.headers is defined %}
+    headers: {{ server_config.headers | tojson }}
+    {%- endif %}
     {%- if server_config.env is defined %}
     env: {{ server_config.env | tojson }}
     {%- endif %}

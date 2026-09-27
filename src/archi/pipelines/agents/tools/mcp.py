@@ -9,6 +9,7 @@ from langchain.tools import BaseTool
 from src.utils.config_access import get_mcp_servers_config, get_full_config
 from src.utils.logging import get_logger
 from src.archi.pipelines.agents.utils.skill_utils import load_skill
+from src.archi.pipelines.agents.utils.mcp_utils import resolve_header_secrets
 
 logger = get_logger(__name__)
 
@@ -56,6 +57,13 @@ async def initialize_mcp_client() -> Tuple[Optional[MultiServerMCPClient], List[
             # For HTTP-based transports, `env` is for the sidecar container (compose),
             # not the MCP client connection — drop it here.
             cfg.pop("env", None)
+            if cfg.get("headers"):
+                cfg["headers"], missing = resolve_header_secrets(cfg["headers"])
+                if missing:
+                    logger.warning(
+                        f"Skipping MCP server '{name}': header secret(s) not set: {missing}"
+                    )
+                    continue
         client_configs[name] = cfg
 
     logger.info(f"Configuring MCP client with servers: {list(client_configs.keys())}")
@@ -83,7 +91,7 @@ async def initialize_mcp_client() -> Tuple[Optional[MultiServerMCPClient], List[
     # to the agent's system prompt once, rather than duplicated across every tool.
     skills_parts: List[str] = []
     for name, skill_content in server_skills.items():
-        if name not in failed_servers:
+        if name in client_configs and name not in failed_servers:
             skills_parts.append(
                 f"\n--- {name} MCP Server Domain Knowledge ---\n{skill_content}"
             )

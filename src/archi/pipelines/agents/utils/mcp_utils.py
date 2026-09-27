@@ -1,9 +1,38 @@
-from typing import Optional, Any
+from typing import Optional, Any, Dict, List, Tuple
 import asyncio
+import re
 import threading
+from src.utils.env import read_secret
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+_SECRET_REF = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+
+def resolve_header_secrets(headers: Dict[str, Any]) -> Tuple[Dict[str, Any], List[str]]:
+    """
+    Expand ${SECRET_NAME} references in MCP header values from the deployment
+    secrets (read_secret: *_FILE or env var), so tokens stay out of config.yaml
+    and the static_config table.
+
+    Returns:
+        resolved: headers with references substituted
+        missing: secret names that were referenced but not set
+    """
+    missing: List[str] = []
+
+    def _sub(match: re.Match) -> str:
+        value = read_secret(match.group(1))
+        if not value:
+            missing.append(match.group(1))
+        return value
+
+    resolved = {
+        k: _SECRET_REF.sub(_sub, v) if isinstance(v, str) else v
+        for k, v in headers.items()
+    }
+    return resolved, missing
 
 class AsyncLoopThread:
     """
