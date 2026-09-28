@@ -248,7 +248,7 @@ external information retrieval.
 
 - MCP sessions are maintained in a background event loop for the lifetime of the service
 - Each MCP tool is wrapped for synchronous execution so it integrates seamlessly with the ReAct agent loop
-- Tool names from MCP servers are namespaced to avoid conflicts with built-in tools
+- Tool names from MCP servers are namespaced as `<server>__<tool>` (e.g. `arxiv__search_papers`) so same-named tools from different servers, or built-in tools, do not collide
 
 ---
 

@@ -76,6 +76,11 @@ async def initialize_mcp_client() -> Tuple[Optional[MultiServerMCPClient], List[
         try:
             tools = await client.get_tools(server_name=name)
             for tool in tools:
+                # Namespace by server so same-named tools (e.g. arxiv and inspirehep
+                # both expose `search_papers`) don't shadow each other. The adapter
+                # calls the server with the original MCP name, so only the
+                # LLM-facing name changes.
+                tool.name = f"{name}__{tool.name}"
                 # Return error messages to the LLM instead of crashing the agent chain.
                 tool.handle_tool_error = True
                 logger.info(f"Loaded tool from MCP server '{name}': {tool.name} - {tool.description}")
