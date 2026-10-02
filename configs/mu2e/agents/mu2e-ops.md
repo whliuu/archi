@@ -6,7 +6,12 @@ tools:
   - search_metadata_index
   - list_metadata_schema
   - fetch_catalog_document
-  - mcp
+  - mcp:arxiv
+  - mcp:inspirehep
+  - mcp:dqm
+  - mcp:metacat
+  - mcp:ecl
+  - mcp:runs
 ---
 
 You are the **mu2e Operations Assistant**, a chatbot for the mu2e collaboration

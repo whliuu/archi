@@ -9,13 +9,21 @@ from langchain.tools import BaseTool
 from src.utils.config_access import get_mcp_servers_config, get_full_config
 from src.utils.logging import get_logger
 from src.archi.pipelines.agents.utils.skill_utils import load_skill
-from src.archi.pipelines.agents.utils.mcp_utils import resolve_header_secrets
+from src.archi.pipelines.agents.utils.mcp_utils import (
+    filter_mcp_tools,
+    resolve_header_secrets,
+    select_mcp_servers,
+)
 
 logger = get_logger(__name__)
 
-async def initialize_mcp_client() -> Tuple[Optional[MultiServerMCPClient], List[BaseTool], str]:
+async def initialize_mcp_client(
+    server_names: Optional[List[str]] = None,
+) -> Tuple[Optional[MultiServerMCPClient], List[BaseTool], str]:
     """
     Initializes the MCP client and fetches tool definitions.
+    Args:
+        server_names: Only connect to these configured servers (None = all).
     Returns:
         client: The active client instance (must be kept alive by the caller).
         tools: The list of LangChain-compatible tools.
@@ -26,7 +34,9 @@ async def initialize_mcp_client() -> Tuple[Optional[MultiServerMCPClient], List[
             the content doesn't multiply by tool count.
     """
 
-    mcp_servers = get_mcp_servers_config()
+    mcp_servers, unknown = select_mcp_servers(get_mcp_servers_config(), server_names)
+    if unknown:
+        logger.warning(f"Agent requested MCP server(s) not in config: {unknown}")
 
     # Strip archi-only fields that langchain-mcp-adapters doesn't understand.
     # These are consumed by the compose template (sidecars), the legacy stdio
@@ -34,6 +44,7 @@ async def initialize_mcp_client() -> Tuple[Optional[MultiServerMCPClient], List[
     # knows about transport-specific fields.
     _archi_only_fields = {
         "env_from_secrets", "host_file_mounts", "build_context", "image", "path", "skill",
+        "include_tools",
     }
     client_configs: dict[str, dict] = {}
     server_skills: dict[str, str] = {}
@@ -75,6 +86,11 @@ async def initialize_mcp_client() -> Tuple[Optional[MultiServerMCPClient], List[
     for name in client_configs.keys():
         try:
             tools = await client.get_tools(server_name=name)
+            # Optional per-server allow-list, e.g. to keep a server's write tools
+            # away from the agent.
+            tools, missing = filter_mcp_tools(tools, mcp_servers[name].get("include_tools"))
+            if missing:
+                logger.warning(f"MCP server '{name}' does not serve allow-listed tool(s): {missing}")
             for tool in tools:
                 # Namespace by server so same-named tools (e.g. arxiv and inspirehep
                 # both expose `search_papers`) don't shadow each other. The adapter

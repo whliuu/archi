@@ -64,6 +64,32 @@ mcp_servers:
     url: http://mu2eaigpvm01.fnal.gov:8006/mcp
     headers:
       Authorization: "Bearer ${MU2E_MCP_TOKEN}"
+  # Live DAQ monitoring (github.com/Mu2e/daqpy), used only by the DAQ agent
+  # (`mcp:daq`). The server is unauthenticated and also serves run_fe_macro
+  # (runs FE macros on hardware) and search_logs (pattern reaches a remote shell
+  # over ssh), so only the read tools below are passed to the agent.
+  daq:
+    transport: streamable_http
+    url: http://mu2e-cfo-01.fnal.gov:3004/mcp
+    include_tools:
+      - get_app_status
+      - get_current_state
+      - get_run_number
+      - get_alias_list
+      - get_console_messages
+      - get_system_messages
+      - list_artdaq_processes
+      - list_artdaq_log_files
+      - read_artdaq_log
+      - list_artdaq_fcl_files
+      - get_artdaq_stats
+      - get_artdaq_stats_all
+      - list_log_files
+      - read_log
+      - get_fe_interfaces
+      - get_fe_macro_list
+      - list_docs
+      - read_doc
   # Not enabled: `memory` has write tools and stores documents under the token
   # owner, which every chatbot user would share. `registry` only lists servers.
   # memory:

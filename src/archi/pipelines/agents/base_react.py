@@ -19,7 +19,7 @@ from src.archi.providers import get_model
 from src.archi.providers.base import ProviderType
 from src.archi.utils.output_dataclass import PipelineOutput
 from src.archi.pipelines.agents.utils.run_memory import RunMemory
-from src.archi.pipelines.agents.utils.mcp_utils import AsyncLoopThread
+from src.archi.pipelines.agents.utils.mcp_utils import AsyncLoopThread, mcp_servers_for_agent, uses_mcp
 from src.archi.pipelines.agents.tools import initialize_mcp_client
 from src.utils.logging import get_logger
 
@@ -1077,7 +1077,7 @@ class BaseReActAgent:
         base_tools = list(static_tools) if static_tools is not None else self.tools
         toolset: List[Callable] = list(base_tools)
 
-        if "mcp" in self.selected_tool_names:
+        if uses_mcp(self.selected_tool_names):
             if self._mcp_tools is None:
                 built = self._build_mcp_tools()
                 self._mcp_tools = list(built or [])
@@ -1130,7 +1130,7 @@ class BaseReActAgent:
     def _build_static_tools(self) -> List[Callable]:
         """Build and returns static tools defined in the config."""
         selected = list(self.selected_tool_names or [])
-        static_names = [name for name in selected if name != "mcp"]
+        static_names = [name for name in selected if not uses_mcp([name])]
         return self._select_tools_from_registry(static_names)
 
     def _build_mcp_tools(self) -> List[Callable]:
@@ -1140,7 +1140,9 @@ class BaseReActAgent:
 
             # Initialize MCP client on the background loop
             # The client and sessions will live on this loop
-            client, mcp_tools, skills_text = self._async_runner.run(initialize_mcp_client())
+            client, mcp_tools, skills_text = self._async_runner.run(
+                initialize_mcp_client(mcp_servers_for_agent(self.selected_tool_names))
+            )
             if client is None:
                 logger.info("No MCP servers configured.")
                 return None
