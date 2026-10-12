@@ -2,6 +2,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Iterator, Asyn
 import re
 import time
 import uuid
+import json
 
 from langchain.agents import create_agent
 from langchain_core.documents import Document
@@ -265,7 +266,11 @@ class BaseReActAgent:
                 return str(reasoning_content)
         return ""
 
-    def invoke(self, **kwargs) -> PipelineOutput:
+    def invoke(
+        self,
+        callbacks: Optional[Sequence[Any]] = None,
+        **kwargs,
+    ) -> PipelineOutput:
         """Synchronously invoke the agent graph and return the final output."""
         logger.debug("Invoking %s", self.__class__.__name__)
         agent_inputs = self._prepare_agent_inputs(**kwargs)
@@ -273,8 +278,11 @@ class BaseReActAgent:
             self.refresh_agent(force=True)
         logger.debug("Agent refreshed, invoking now")
         recursion_limit = self._recursion_limit()
+        invoke_config: Dict[str, Any] = {"recursion_limit": recursion_limit}
+        if callbacks is not None:
+            invoke_config["callbacks"] = list(callbacks)
         try:
-            answer_output = self.agent.invoke(agent_inputs, {"recursion_limit": recursion_limit})
+            answer_output = self.agent.invoke(agent_inputs, invoke_config)
             logger.debug("Agent invocation completed")
             logger.debug(answer_output)
             messages = self._extract_messages(answer_output)
@@ -1065,6 +1073,11 @@ class BaseReActAgent:
         """Explicitly set the static tools cache."""
         self._static_tools = list(value)
 
+    @property
+    def loaded_mcp_tools(self) -> List[Callable]:
+        """Return the MCP tools successfully loaded for this agent."""
+        return list(self._mcp_tools or [])
+
     def refresh_agent(
         self,
         *,
@@ -1133,7 +1146,7 @@ class BaseReActAgent:
         static_names = [name for name in selected if not uses_mcp([name])]
         return self._select_tools_from_registry(static_names)
 
-    def _build_mcp_tools(self) -> List[Callable]:
+    def _build_mcp_tools(self) -> Optional[List[Callable]]:
         """Retrieve MCP tools from servers defined in the config and keep those server connections alive"""
         try:
             self._async_runner = AsyncLoopThread.get_instance()
@@ -1141,7 +1154,10 @@ class BaseReActAgent:
             # Initialize MCP client on the background loop
             # The client and sessions will live on this loop
             client, mcp_tools, skills_text = self._async_runner.run(
-                initialize_mcp_client(mcp_servers_for_agent(self.selected_tool_names))
+                initialize_mcp_client(
+                    self.config,
+                    server_names=mcp_servers_for_agent(self.selected_tool_names),
+                )
             )
             if client is None:
                 logger.info("No MCP servers configured.")
@@ -1165,9 +1181,47 @@ class BaseReActAgent:
                 runner = self._async_runner
                 tool_name = async_tool.name
 
+                def sanitize_value(v):
+                    """Recursively sanitize a value, including JSON-encoded strings."""
+                    if isinstance(v, str):
+                        # Check if this string is itself JSON - if so, parse and re-serialize it
+                        # to catch any malformed content (trailing commas, etc.)
+                        stripped = v.strip()
+                        if stripped.startswith(("{", "[")):
+                            try:
+                                parsed = json.loads(stripped)
+                                return json.dumps(parsed)  # re-serialize clean
+                            except json.JSONDecodeError:
+                                # It's a JSON string but malformed - try to fix trailing commas
+                                # Remove trailing commas before } or ]
+                                fixed = re.sub(r",\s*([}\]])", r"\1", stripped)
+                                try:
+                                    parsed = json.loads(fixed)
+                                    return json.dumps(parsed)
+                                except json.JSONDecodeError:
+                                    logger.warning("Could not fix malformed JSON string: %s", v[:100])
+                                    return v  # pass through, will still fail but at least we tried
+                        return v
+                    elif isinstance(v, dict):
+                        return {k: sanitize_value(val) for k, val in v.items()}
+                    elif isinstance(v, list):
+                        return [sanitize_value(item) for item in v]
+                    else:
+                        try:
+                            return json.loads(json.dumps(v, default=str))
+                        except (TypeError, ValueError):
+                            return v
+
                 def sync_wrapper(*args, **kwargs):
                     if runner.in_loop_thread():
                         raise RuntimeError("sync_wrapper called from MCP loop thread; would deadlock")
+                    # Sanitize kwargs to ensure valid JSON-serializable arguments
+                    sanitized_kwargs = {}
+                    for k, v in kwargs.items():
+                        if k in {"config", "run_manager", "callbacks"}:
+                            sanitized_kwargs[k] = v
+                            continue
+                        sanitized_kwargs[k] = sanitize_value(v)
                     # Streamed tool_call chunks arrive without args; record here so the UI can resolve them by tool_call_id.
                     try:
                         recorded = {
@@ -1182,7 +1236,7 @@ class BaseReActAgent:
                             "Failed to record MCP tool input for %s: %s", tool_name, exc
                         )
                     # Run on the background loop - NOT a new loop!
-                    return runner.run(async_tool.coroutine(*args, **kwargs))
+                    return runner.run(async_tool.coroutine(*args, **sanitized_kwargs))
 
                 # Assign the wrapper to the tool's 'func' attribute
                 async_tool.func = sync_wrapper

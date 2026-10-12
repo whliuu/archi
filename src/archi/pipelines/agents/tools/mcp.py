@@ -1,12 +1,14 @@
 from __future__ import annotations
 import os
-from typing import List, Any, Tuple, Optional
+import httpx
+import base64
+from typing import List, Any, Tuple, Optional, Dict
 
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_mcp_adapters.tools import load_mcp_tools
 from langchain.tools import BaseTool
 
-from src.utils.config_access import get_mcp_servers_config, get_full_config
+from src.utils.config_access import get_full_config
 from src.utils.logging import get_logger
 from src.archi.pipelines.agents.utils.skill_utils import load_skill
 from src.archi.pipelines.agents.utils.mcp_utils import (
@@ -14,15 +16,33 @@ from src.archi.pipelines.agents.utils.mcp_utils import (
     resolve_header_secrets,
     select_mcp_servers,
 )
+from src.utils.env import read_secret
 
 logger = get_logger(__name__)
 
+def mcp_http_client_factory(**kwargs) -> httpx.AsyncClient:
+    if "verify" in kwargs:
+        kwargs.setdefault("verify", kwargs["verify"])
+    user = read_secret("MCP_HTTP_USERNAME") or None
+    password = read_secret("MCP_HTTP_PASSWORD") or None
+    if user and password:
+        auth_bytes = f"{user}:{password}".encode("utf-8")
+        auth_b64 = base64.b64encode(auth_bytes).decode("utf-8")
+        if kwargs.get("headers"):
+            kwargs["headers"].update({"Authorization":f"Basic {auth_b64}"})
+        else:
+            kwargs["headers"] = {"Authorization":f"Basic {auth_b64}"}
+    return httpx.AsyncClient(**kwargs)
+
+
 async def initialize_mcp_client(
+    config: Optional[Dict[str, Any]] = None,
     server_names: Optional[List[str]] = None,
 ) -> Tuple[Optional[MultiServerMCPClient], List[BaseTool], str]:
     """
     Initializes the MCP client and fetches tool definitions.
     Args:
+        config: Full archi config (defaults to the deployment's config).
         server_names: Only connect to these configured servers (None = all).
     Returns:
         client: The active client instance (must be kept alive by the caller).
@@ -34,9 +54,13 @@ async def initialize_mcp_client(
             the content doesn't multiply by tool count.
     """
 
-    mcp_servers, unknown = select_mcp_servers(get_mcp_servers_config(), server_names)
+    full_config = config if config is not None else get_full_config()
+    mcp_servers, unknown = select_mcp_servers(full_config.get("mcp_servers", {}), server_names)
     if unknown:
         logger.warning(f"Agent requested MCP server(s) not in config: {unknown}")
+    if not mcp_servers:
+        logger.info("No MCP servers configured.")
+        return None, [], ""
 
     # Strip archi-only fields that langchain-mcp-adapters doesn't understand.
     # These are consumed by the compose template (sidecars), the legacy stdio
@@ -44,11 +68,10 @@ async def initialize_mcp_client(
     # knows about transport-specific fields.
     _archi_only_fields = {
         "env_from_secrets", "host_file_mounts", "build_context", "image", "path", "skill",
-        "include_tools",
+        "shared_volume", "include_tools",
     }
     client_configs: dict[str, dict] = {}
     server_skills: dict[str, str] = {}
-    full_config = get_full_config()
     for name, server_cfg in mcp_servers.items():
         # Load any declared skill so we can append it to this server's tool descriptions.
         skill_name = server_cfg.get("skill")
@@ -67,6 +90,9 @@ async def initialize_mcp_client(
         else:
             # For HTTP-based transports, `env` is for the sidecar container (compose),
             # not the MCP client connection — drop it here.
+            if (server_cfg.get("env") or {}).get("httpx_client_factory"):
+                verify = server_cfg.get("host_file_mounts")[0]
+                cfg["httpx_client_factory"] = lambda verify=verify, **kwargs: mcp_http_client_factory(verify=verify, **kwargs)
             cfg.pop("env", None)
             if cfg.get("headers"):
                 cfg["headers"], missing = resolve_header_secrets(cfg["headers"])
@@ -102,7 +128,7 @@ async def initialize_mcp_client(
                 logger.info(f"Loaded tool from MCP server '{name}': {tool.name} - {tool.description}")
             all_tools.extend(tools)
         except Exception as e:
-            logger.error(f"Failed to fetch tools from MCP server '{name}': {e}")
+            logger.error(f"Failed to fetch tools from MCP server '{name}': {e}", exc_info=e)
             failed_servers[name] = str(e)
 
     logger.info(f"Active MCP servers: {[n for n in client_configs if n not in failed_servers]}")

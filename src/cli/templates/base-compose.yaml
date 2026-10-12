@@ -35,6 +35,11 @@ services:
       - {{ data_manager_volume_name }}:/root/data/
       - ./configs:/root/archi/configs
       - ./weblists:/root/archi/weblists
+      {%- for srv_name, srv_cfg in (mcp_servers | default({})).items() %}
+      {%- if srv_cfg.shared_volume %}
+      - {{ srv_cfg.shared_volume }}-{{ name }}:/shared/{{ srv_cfg.shared_volume }}:ro
+      {%- endif %}
+      {%- endfor %}
     logging:
       options:
         max-size: 10m
@@ -161,10 +166,14 @@ services:
     volumes:
       - {{ data_manager_volume_name }}:/root/data/
       - ./configs:/root/archi/configs
+      {% if evaluation_mcp_configured | default(false) -%}
+      - ./evaluation_config:/root/archi/evaluation_config:ro
+      {% endif -%}
       - ./data/prompts:/root/archi/data/prompts:ro
       - ./data/agents:/root/archi/agents
       - ./data/ab_agents:/root/archi/ab_agents
       - ./data/skills:/root/archi/skills:ro
+      - ./data/evaluations:/root/archi/evaluations
       {% for prompt_file in prompt_files | default([]) -%}
       - ./{{ prompt_file }}:/root/archi/{{ prompt_file }}
       {% endfor %}
@@ -175,9 +184,13 @@ services:
       {%- if srv_cfg.transport == 'stdio' and srv_cfg.path is defined %}
       - {{ srv_cfg.path }}:/root/mcp-packages/{{ srv_name }}:ro
       {%- endif %}
+      {%- for host_mount in (srv_cfg.host_file_mounts | default([])) %}
+      {%- if host_mount is string %}
+      - {{ host_mount }}:{{ host_mount }}:ro
+      {%- else %}
+      - {{ host_mount.src }}:{{ host_mount.dest }}{{ ':ro' if host_mount.read_only | default(true) else '' }}
+      {%- endif %}
       {%- endfor %}
-      {%- for host_path in (host_file_mounts | default([])) %}
-      - {{ host_path }}:{{ host_path }}:ro
       {%- endfor %}
     {#- Build the MCP auto-install command for stdio packages with a path #}
     {%- set mcp_installs = [] %}
@@ -742,7 +755,7 @@ services:
     {%- else %}
     image: {{ srv_cfg.image }}
     {%- endif %}
-    {%- if srv_cfg.env or srv_cfg.env_from_secrets %}
+    {%- if srv_cfg.env or srv_cfg.env_from_secrets or srv_cfg.shared_volume %}
     environment:
       {%- for k, v in (srv_cfg.env | default({})).items() %}
       {{ k }}: "{{ v }}"
@@ -750,6 +763,10 @@ services:
       {%- for k in srv_cfg.env_from_secrets | default([]) %}
       {{ k }}_FILE: /run/secrets/{{ k | lower }}
       {%- endfor %}
+      {%- if srv_cfg.shared_volume %}
+      {#- Derive the env var name mechanically: "indico-downloads" -> INDICO_DOWNLOADS_DIR. #}
+      {{ (srv_cfg.shared_volume | upper | replace('-', '_')) }}_DIR: "/shared/{{ srv_cfg.shared_volume }}"
+      {%- endif %}
     {%- endif %}
     {%- if srv_cfg.env_from_secrets %}
     secrets:
@@ -757,15 +774,18 @@ services:
       - {{ k | lower }}
       {%- endfor %}
     {%- endif %}
-    {%- if srv_cfg.host_file_mounts %}
+    {%- if srv_cfg.host_file_mounts or srv_cfg.shared_volume %}
     volumes:
-      {%- for m in srv_cfg.host_file_mounts %}
+      {%- for m in srv_cfg.host_file_mounts | default([]) %}
       {%- if m is string %}
       - {{ m }}:{{ m }}:ro
       {%- else %}
       - {{ m.src }}:{{ m.dest }}:ro
       {%- endif %}
       {%- endfor %}
+      {%- if srv_cfg.shared_volume %}
+      - {{ srv_cfg.shared_volume }}-{{ name }}:/shared/{{ srv_cfg.shared_volume }}
+      {%- endif %}
     {%- endif %}
     logging:
       options:
@@ -783,6 +803,11 @@ volumes:
   {{ volume }}:
     external: true
   {% endfor %}
+  {%- for srv_name, srv_cfg in (mcp_servers | default({})).items() %}
+  {%- if srv_cfg.shared_volume %}
+  {{ srv_cfg.shared_volume }}-{{ name }}:
+  {%- endif %}
+  {%- endfor %}
 
 {% if required_secrets %}
 secrets:

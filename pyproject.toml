@@ -2,7 +2,7 @@
 name = "archi"
 version = "1.2.4"
 description = "An AI Augmented Research Chat Intelligence (archi)"
-requires-python = ">=3.7"
+requires-python = ">=3.10"
 authors = [
     {name="Pietro Lugato", email="pmlugato@mit.edu"},
     {name="Julius Heitkoetter", email="juliush@mit.edu"},
@@ -26,7 +26,9 @@ dependencies = [
     "pandas==2.3.2",
     "isort==6.0.1",
     "pre-commit>=4",
-    "psycopg2-binary==2.9.10"
+    "psycopg2-binary==2.9.10",
+    "markitdown[pdf,pptx]>=0.1.0",
+    "ijson==3.5.1",
 ]
 
 [project.scripts]
@@ -48,6 +50,9 @@ build-backend = "setuptools.build_meta"
 [tool.pytest.ini_options]
 testpaths = ["tests/unit"]
 addopts = "-v --tb=short"
+markers = [
+    "integration: marks tests that need a live database or external services (deselect with '-m \"not integration\"')",
+]
 
 [project.urls]
 "Homepage" = "https://github.com/archi-physics/archi"
