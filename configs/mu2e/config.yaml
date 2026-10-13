@@ -64,6 +64,17 @@ mcp_servers:
     url: http://mu2eaigpvm01.fnal.gov:8006/mcp
     headers:
       Authorization: "Bearer ${MU2E_MCP_TOKEN}"
+  # Mu2e knowledge base: DocDB (~24k docs) + wiki, plus INSPIRE papers.
+  # kb_research is left out (multi-minute server-side agent; tool calls time out
+  # at 120s) and so is kb_get_image (returns images the text-only LLM can't see).
+  kb:
+    transport: streamable_http
+    url: http://mu2eaigpvm01.fnal.gov:8008/mcp
+    headers:
+      Authorization: "Bearer ${MU2E_MCP_TOKEN}"
+    include_tools:
+      - kb_search
+      - kb_get
   # Live DAQ monitoring (github.com/Mu2e/daqpy), used only by the DAQ agent
   # (`mcp:daq`). The server is unauthenticated and also serves run_fe_macro
   # (runs FE macros on hardware) and search_logs (pattern reaches a remote shell
