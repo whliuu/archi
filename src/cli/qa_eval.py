@@ -5,7 +5,17 @@ from typing import Optional
 
 import click
 
-from src.evaluation.qa import QAWorkflow
+# Mirrors QAWorkflow.MAX_PHASE_WORKERS (the workflow re-validates the bound).
+MAX_PHASE_WORKERS = 16
+
+
+def QAWorkflow():
+    # Imported on first use: the QA workflow pulls in the agent runtime
+    # (langchain, mcp), which `archi create` and the other CLI commands don't
+    # need, and the CLI venv usually doesn't have.
+    from src.evaluation.qa import QAWorkflow as _QAWorkflow
+
+    return _QAWorkflow()
 
 
 def _run(action, success_message: str) -> None:
@@ -69,14 +79,14 @@ def eval_cli() -> None:
 )
 @click.option(
     "--run-workers",
-    type=click.IntRange(min=1, max=QAWorkflow.MAX_PHASE_WORKERS),
+    type=click.IntRange(min=1, max=MAX_PHASE_WORKERS),
     default=1,
     show_default=True,
     help="Concurrent tested-agent attempts.",
 )
 @click.option(
     "--score-workers",
-    type=click.IntRange(min=1, max=QAWorkflow.MAX_PHASE_WORKERS),
+    type=click.IntRange(min=1, max=MAX_PHASE_WORKERS),
     default=1,
     show_default=True,
     help="Concurrent evaluator comparisons.",
@@ -198,7 +208,7 @@ def prepare_cli(
 )
 @click.option(
     "--run-workers",
-    type=click.IntRange(min=1, max=QAWorkflow.MAX_PHASE_WORKERS),
+    type=click.IntRange(min=1, max=MAX_PHASE_WORKERS),
     default=1,
     show_default=True,
     help="Concurrent tested-agent attempts.",
@@ -243,7 +253,7 @@ def run_cli(
 @click.option("--overwrite", is_flag=True, help="Replace score and report artifacts.")
 @click.option(
     "--score-workers",
-    type=click.IntRange(min=1, max=QAWorkflow.MAX_PHASE_WORKERS),
+    type=click.IntRange(min=1, max=MAX_PHASE_WORKERS),
     default=1,
     show_default=True,
     help="Concurrent evaluator comparisons.",

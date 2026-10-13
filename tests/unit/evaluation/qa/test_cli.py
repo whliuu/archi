@@ -1,3 +1,5 @@
+import subprocess
+import sys
 from types import SimpleNamespace
 
 from click.testing import CliRunner
@@ -186,3 +188,19 @@ def test_composite_cli_runs_local_dataset_to_report_with_four_attempts(
     summary = read_json(run_dir / "summary.json")
     assert summary["quality_accounted_attempts"] == 4
     assert summary["overall_attempt_pass_rate"] == 1.0
+
+
+def test_cli_import_does_not_load_qa_workflow():
+    # The CLI venv lacks the agent runtime deps (mcp, langchain), so `archi
+    # create` breaks if importing the CLI drags in the QA workflow.
+    code = (
+        "import sys, src.cli.cli_main; "
+        "sys.exit('src.evaluation.qa.workflow' in sys.modules)"
+    )
+    assert subprocess.run([sys.executable, "-c", code]).returncode == 0
+
+
+def test_cli_worker_bound_matches_workflow():
+    assert (
+        qa_cli_module.MAX_PHASE_WORKERS == workflow_module.QAWorkflow.MAX_PHASE_WORKERS
+    )
