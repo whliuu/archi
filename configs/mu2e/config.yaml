@@ -192,8 +192,10 @@ services:
       cern_litellm:
         enabled: true
         base_url: "https://litellm.fnal.gov/"   # Fermilab LiteLLM gateway (note: no /v1)
-        default_model: "azure/claude-haiku-4-5"
+        default_model: "azure/claude-sonnet-5-5"
         models:
+          - "azure/claude-sonnet-5-5"
+          - "azure/claude-haiku-5-5"
           - "azure/claude-haiku-4-5"
       openrouter:
         enabled: false
