@@ -76,10 +76,12 @@ mcp_servers:
       - kb_search
       - kb_get
   # Live DAQ monitoring (github.com/Mu2e/daqpy, develop branch), used only by
-  # the DAQ agent (`mcp:daq`). Served from mu2e-dl-02 by
-  # configs/mu2e/daq/daqpy_mcp_readonly.py, which serves only these read tools:
-  # stock daqpy-mcp is unauthenticated and also serves send_chat (posts to the
-  # operators' OTS chat) and tools whose arguments reach a remote shell.
+  # the DAQ agent (`mcp:daq`). Served on mu2e-dl-02 by stock daqpy-mcp
+  # (~/ots_ops/run_mcp.sh), which is unauthenticated and also serves send_chat
+  # (posts to the operators' OTS chat) and tools whose arguments reach a remote
+  # shell, so only these read tools are passed to the agent. read_artdaq_log is
+  # left out because its host/path mode is one of those; it is safe again under
+  # configs/mu2e/daq/daqpy_mcp_readonly.py, which limits it to process labels.
   # (Port 3004 on mu2e-cfo-01 is the daqpy-web dashboard, not MCP.)
   daq:
     transport: streamable_http
@@ -93,7 +95,6 @@ mcp_servers:
       - list_log_files
       - read_log
       - list_artdaq_processes
-      - read_artdaq_log
       - list_artdaq_fcl_files
       - get_artdaq_stats
       - list_run_records

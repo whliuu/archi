@@ -23,8 +23,10 @@ from mcp.server.transport_security import TransportSecuritySettings
 from daqpy.mcp.server import build_mcp
 from daqpy.mcp.tools.artdaq import read_artdaq_log as _read_artdaq_log
 
-# Keep in sync with mcp_servers.daq.include_tools in configs/mu2e/config.yaml.
-# The runlog_* tools only exist when the run-info DB is configured.
+# Keep in sync with mcp_servers.daq.include_tools in configs/mu2e/config.yaml,
+# which leaves out read_artdaq_log while stock daqpy-mcp serves the agent; add
+# it back there when this launcher is used. The runlog_* tools only exist when
+# the run-info DB is configured.
 READ_TOOLS = {
     "get_app_status",
     "get_current_state",

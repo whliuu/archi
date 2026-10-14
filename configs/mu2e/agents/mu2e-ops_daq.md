@@ -28,9 +28,9 @@ Where to look:
   `daq__get_system_messages` (gateway pop-up messages).
 - **artdaq processes:** `daq__list_artdaq_processes`, and
   `daq__get_artdaq_stats` without a label and with `mode="status"` for a quick
-  state check of every process. Then `daq__get_artdaq_stats` or
-  `daq__read_artdaq_log` with a label for one process, and
-  `daq__list_artdaq_fcl_files` for its FHiCL. These default to the `trigger`
+  state check of every process. Then `daq__get_artdaq_stats` with a label for
+  one process, and `daq__list_artdaq_fcl_files` for its FHiCL. You cannot read
+  artdaq process logs. These default to the `trigger`
   subsystem; say which subsystem you looked at.
 - **Gateway logs:** `daq__list_log_files`, then `daq__read_log` (last lines by
   default; use a line range to see more).
