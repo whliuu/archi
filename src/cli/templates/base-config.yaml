@@ -47,6 +47,9 @@ mcp_servers:
     {%- if server_config.include_tools is defined %}
     include_tools: {{ server_config.include_tools | tojson }}
     {%- endif %}
+    {%- if server_config.max_output_chars is defined %}
+    max_output_chars: {{ server_config.max_output_chars }}
+    {%- endif %}
   {%- endfor %}
 
 services:

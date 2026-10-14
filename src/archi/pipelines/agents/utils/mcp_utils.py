@@ -91,6 +91,48 @@ def filter_mcp_tools(tools: Sequence[Any], include: Optional[Sequence[str]]) -> 
     missing = [n for n in include if n not in served]
     return kept, missing
 
+
+# Default cap on one MCP tool result, in characters (roughly 10k tokens). Every
+# result stays in the agent's context for the rest of the turn, so a few
+# oversized results (e.g. knowledge-base searches) can overflow the model's
+# context window.
+DEFAULT_MCP_MAX_OUTPUT_CHARS = 40000
+
+
+def truncate_tool_text(content: Any, max_chars: int) -> Any:
+    """
+    Cut an MCP tool's text result to `max_chars`, ending with a note so the LLM
+    knows it was cut. The adapter returns a str, or a list of str for
+    multi-part results (joined before cutting). A non-positive `max_chars`
+    disables the cap.
+    """
+    if max_chars <= 0:
+        return content
+    text = "\n".join(content) if isinstance(content, list) else content
+    if not isinstance(text, str) or len(text) <= max_chars:
+        return content
+    return (
+        f"{text[:max_chars]}\n\n[Output truncated: showing the first {max_chars} of "
+        f"{len(text)} characters. Narrow the query or fetch a single item to see the rest.]"
+    )
+
+
+def cap_tool_output(tool: Any, max_chars: int) -> None:
+    """
+    Wrap an MCP tool's coroutine so its text result is cut to `max_chars`.
+    Both the async path and archi's sync wrapper call `tool.coroutine`, so this
+    covers every call. Tools without a coroutine are left alone.
+    """
+    call = getattr(tool, "coroutine", None)
+    if call is None or max_chars <= 0:
+        return
+
+    async def capped_call(*args, **kwargs):
+        content, artifact = await call(*args, **kwargs)
+        return truncate_tool_text(content, max_chars), artifact
+
+    tool.coroutine = capped_call
+
 class AsyncLoopThread:
     """
     A dedicated background thread running a single event loop.

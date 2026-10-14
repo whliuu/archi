@@ -12,6 +12,8 @@ from src.utils.config_access import get_full_config
 from src.utils.logging import get_logger
 from src.archi.pipelines.agents.utils.skill_utils import load_skill
 from src.archi.pipelines.agents.utils.mcp_utils import (
+    DEFAULT_MCP_MAX_OUTPUT_CHARS,
+    cap_tool_output,
     filter_mcp_tools,
     resolve_header_secrets,
     select_mcp_servers,
@@ -68,7 +70,7 @@ async def initialize_mcp_client(
     # knows about transport-specific fields.
     _archi_only_fields = {
         "env_from_secrets", "host_file_mounts", "build_context", "image", "path", "skill",
-        "shared_volume", "include_tools",
+        "shared_volume", "include_tools", "max_output_chars",
     }
     client_configs: dict[str, dict] = {}
     server_skills: dict[str, str] = {}
@@ -117,6 +119,7 @@ async def initialize_mcp_client(
             tools, missing = filter_mcp_tools(tools, mcp_servers[name].get("include_tools"))
             if missing:
                 logger.warning(f"MCP server '{name}' does not serve allow-listed tool(s): {missing}")
+            max_output_chars = mcp_servers[name].get("max_output_chars", DEFAULT_MCP_MAX_OUTPUT_CHARS)
             for tool in tools:
                 # Namespace by server so same-named tools (e.g. arxiv and inspirehep
                 # both expose `search_papers`) don't shadow each other. The adapter
@@ -125,6 +128,9 @@ async def initialize_mcp_client(
                 tool.name = f"{name}__{tool.name}"
                 # Return error messages to the LLM instead of crashing the agent chain.
                 tool.handle_tool_error = True
+                # Cut oversized results; each one stays in the agent's context
+                # for the rest of the turn.
+                cap_tool_output(tool, max_output_chars)
                 logger.info(f"Loaded tool from MCP server '{name}': {tool.name} - {tool.description}")
             all_tools.extend(tools)
         except Exception as e:

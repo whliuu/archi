@@ -225,6 +225,7 @@ Each server entry follows the format expected by the `langchain-mcp-adapters` li
 - **`transport`**: Communication method — `"stdio"` (subprocess) or `"sse"` (HTTP Server-Sent Events)
 - **`command`** / **`args`**: For `stdio` transport, the command to launch the server
 - **`url`**: For `sse` transport, the server endpoint
+- **`max_output_chars`** (Archi-only, optional): Maximum characters of one tool result passed to the LLM; longer results are cut and end with a note saying so. Defaults to `40000` (roughly 10k tokens). Every result stays in context for the rest of the turn, so a few oversized results can overflow the model's context window. Set `0` to disable.
 
 ### Agent Spec Example
 

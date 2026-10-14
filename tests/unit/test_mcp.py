@@ -114,6 +114,44 @@ def test_initialize_mcp_client_http_server_without_env(monkeypatch):
     assert [t.name for t in tools] == ["daq__get_run_number"]
 
 
+def test_initialize_mcp_client_caps_tool_output(monkeypatch):
+    observed = {}
+    config = {
+        "mcp_servers": {
+            "kb": {"transport": "streamable_http", "url": "http://kb/mcp", "max_output_chars": 10},
+            "arxiv": {"transport": "streamable_http", "url": "http://arxiv/mcp"},
+        }
+    }
+
+    def make_tool(name, content):
+        async def call_tool(**arguments):
+            return content, None
+
+        return SimpleNamespace(name=name, description="", handle_tool_error=False, coroutine=call_tool)
+
+    class FakeClient:
+        def __init__(self, connections):
+            observed["connections"] = connections
+
+        async def get_tools(self, server_name):
+            if server_name == "kb":
+                return [make_tool("kb_search", "a" * 50)]
+            return [make_tool("search_papers", "b" * (mcp.DEFAULT_MCP_MAX_OUTPUT_CHARS + 1))]
+
+    monkeypatch.setattr(mcp, "MultiServerMCPClient", FakeClient)
+    monkeypatch.setattr(mcp, "load_skill", lambda name, loaded_config: "")
+
+    _, tools, _ = asyncio.run(mcp.initialize_mcp_client(config))
+    by_name = {t.name: t for t in tools}
+
+    assert "max_output_chars" not in observed["connections"]["kb"]
+    kb_content, _ = asyncio.run(by_name["kb__kb_search"].coroutine(query="x"))
+    assert kb_content.startswith("a" * 10)
+    assert "a" * 11 not in kb_content
+    arxiv_content, _ = asyncio.run(by_name["arxiv__search_papers"].coroutine(query="x"))
+    assert "b" * (mcp.DEFAULT_MCP_MAX_OUTPUT_CHARS + 1) not in arxiv_content
+
+
 def test_base_agent_passes_its_runtime_config_to_mcp_initializer(monkeypatch):
     observed = {}
     config = _runtime_config()
