@@ -21,6 +21,7 @@ from src.archi.providers.base import ProviderType
 from src.archi.utils.output_dataclass import PipelineOutput
 from src.archi.pipelines.agents.utils.run_memory import RunMemory
 from src.archi.pipelines.agents.utils.mcp_utils import AsyncLoopThread, mcp_servers_for_agent, uses_mcp
+from src.archi.pipelines.agents.utils.context_overflow import ShrinkToolResultsOnOverflow
 from src.archi.pipelines.agents.tools import initialize_mcp_client
 from src.utils.logging import get_logger
 
@@ -1133,10 +1134,13 @@ class BaseReActAgent:
         logger.debug("Creating agent %s with:", self.__class__.__name__)
         logger.debug("%d tools", len(tools))
         logger.debug("%d middleware components", len(middleware))
+        # Last, so it wraps the model call itself: on a context overflow it
+        # shortens older tool results and retries that call.
+        overflow_middleware = ShrinkToolResultsOnOverflow(self._is_context_overflow_error)
         return create_agent(
             model=self.agent_llm,
             tools=tools,
-            middleware=middleware,
+            middleware=[*middleware, overflow_middleware],
             system_prompt=system_prompt,
         )
 

@@ -250,6 +250,7 @@ external information retrieval.
 - MCP sessions are maintained in a background event loop for the lifetime of the service
 - Each MCP tool is wrapped for synchronous execution so it integrates seamlessly with the ReAct agent loop
 - Tool names from MCP servers are namespaced as `<server>__<tool>` (e.g. `arxiv__search_papers`) so same-named tools from different servers, or built-in tools, do not collide
+- If a model call exceeds the model's context window partway through a turn (for example after many searches), older tool results from any tool are shortened for that call, each to no less than 2000 characters and ending with a note saying so, and the call is retried instead of failing the turn
 
 ---
 
