@@ -9,31 +9,49 @@ from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-_SECRET_REF = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+# ${NAME}, or ${NAME:-default} to fall back to `default` when NAME is unset.
+_SECRET_REF = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
+
+
+def resolve_secret_refs(text: str) -> Tuple[str, List[str]]:
+    """
+    Expand ${SECRET_NAME} and ${SECRET_NAME:-default} references in `text`
+    from the deployment secrets (read_secret: *_FILE or env var), so tokens
+    and per-host values stay out of config.yaml and the static_config table.
+
+    Returns:
+        resolved: text with references substituted
+        missing: secret names referenced without a default but not set
+    """
+    missing: List[str] = []
+
+    def _sub(match: re.Match) -> str:
+        value = read_secret(match.group(1))
+        if value:
+            return value
+        if match.group(2) is not None:
+            return match.group(2)
+        missing.append(match.group(1))
+        return ""
+
+    return _SECRET_REF.sub(_sub, text), missing
 
 
 def resolve_header_secrets(headers: Dict[str, Any]) -> Tuple[Dict[str, Any], List[str]]:
     """
-    Expand ${SECRET_NAME} references in MCP header values from the deployment
-    secrets (read_secret: *_FILE or env var), so tokens stay out of config.yaml
-    and the static_config table.
+    Expand secret references (see resolve_secret_refs) in MCP header values.
 
     Returns:
         resolved: headers with references substituted
         missing: secret names that were referenced but not set
     """
     missing: List[str] = []
-
-    def _sub(match: re.Match) -> str:
-        value = read_secret(match.group(1))
-        if not value:
-            missing.append(match.group(1))
-        return value
-
-    resolved = {
-        k: _SECRET_REF.sub(_sub, v) if isinstance(v, str) else v
-        for k, v in headers.items()
-    }
+    resolved: Dict[str, Any] = {}
+    for k, v in headers.items():
+        if isinstance(v, str):
+            v, value_missing = resolve_secret_refs(v)
+            missing.extend(value_missing)
+        resolved[k] = v
     return resolved, missing
 
 

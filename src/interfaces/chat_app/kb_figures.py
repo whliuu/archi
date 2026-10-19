@@ -45,7 +45,7 @@ async def fetch_kb_figure(identifier: str, server_cfg: Dict[str, Any]) -> Tuple[
 
     cfg, missing = build_client_config(server_cfg)
     if missing:
-        raise RuntimeError(f"kb header secret(s) not set: {missing}")
+        raise RuntimeError(f"kb secret(s) not set: {missing}")
     client = MultiServerMCPClient({KB_SERVER_NAME: cfg})
     async with client.session(KB_SERVER_NAME) as session:
         result = await session.call_tool(KB_IMAGE_TOOL, {"identifier": identifier})

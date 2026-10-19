@@ -16,6 +16,7 @@ from src.archi.pipelines.agents.utils.mcp_utils import (
     cap_tool_output,
     filter_mcp_tools,
     resolve_header_secrets,
+    resolve_secret_refs,
     select_mcp_servers,
 )
 from src.utils.env import read_secret
@@ -54,8 +55,8 @@ def build_client_config(server_cfg: Dict[str, Any]) -> Tuple[Dict[str, Any], Lis
 
     Returns:
         cfg: the client connection config
-        missing: header secrets referenced but not set; the server can't be
-            used while this is non-empty
+        missing: secrets referenced in the url or headers but not set; the
+            server can't be used while this is non-empty
     """
     cfg = {k: v for k, v in server_cfg.items() if k not in _ARCHI_ONLY_FIELDS}
     missing: List[str] = []
@@ -72,8 +73,13 @@ def build_client_config(server_cfg: Dict[str, Any]) -> Tuple[Dict[str, Any], Lis
             verify = server_cfg.get("host_file_mounts")[0]
             cfg["httpx_client_factory"] = lambda verify=verify, **kwargs: mcp_http_client_factory(verify=verify, **kwargs)
         cfg.pop("env", None)
+        # A url can reference a secret too, for a server whose address differs
+        # per host (set it in that host's secrets.env).
+        if isinstance(cfg.get("url"), str):
+            cfg["url"], missing = resolve_secret_refs(cfg["url"])
         if cfg.get("headers"):
-            cfg["headers"], missing = resolve_header_secrets(cfg["headers"])
+            cfg["headers"], header_missing = resolve_header_secrets(cfg["headers"])
+            missing += header_missing
     return cfg, missing
 
 
@@ -117,7 +123,7 @@ async def initialize_mcp_client(
         cfg, missing = build_client_config(server_cfg)
         if missing:
             logger.warning(
-                f"Skipping MCP server '{name}': header secret(s) not set: {missing}"
+                f"Skipping MCP server '{name}': secret(s) not set: {missing}"
             )
             continue
         client_configs[name] = cfg

@@ -85,9 +85,13 @@ mcp_servers:
   # left out because its host/path mode is one of those; it is safe again under
   # configs/mu2e/daq/daqpy_mcp_readonly.py, which limits it to process labels.
   # (Port 3004 on mu2e-cfo-01 is the daqpy-web dashboard, not MCP.)
+  # A container on dl-02 itself can't reach dl-02's own FQDN (rootless podman's
+  # pasta gives it the host IP, so the connection is refused), so the dl-02
+  # deployment sets DAQ_MCP_URL=http://host.containers.internal:8765/mcp in its
+  # secrets.env instead of editing this file. Other hosts use the default.
   daq:
     transport: streamable_http
-    url: http://mu2e-dl-02.fnal.gov:8765/mcp
+    url: "${DAQ_MCP_URL:-http://mu2e-dl-02.fnal.gov:8765/mcp}"
     include_tools:
       - get_app_status
       - get_current_state
