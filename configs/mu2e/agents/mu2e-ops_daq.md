@@ -34,10 +34,15 @@ Where to look:
   subsystem; say which subsystem you looked at.
 - **Gateway logs:** `daq__list_log_files`, then `daq__read_log` (last lines by
   default; use a line range to see more).
-- **Past runs:** `daq__runlog_find` and `daq__runlog_run` (run log, if
-  available), `daq__runlog_config` (a run's configuration), and
-  `daq__list_run_records` / `daq__get_run_record` (run records on the
-  DAQInterface host).
+- **Past runs:** `daq__runlog_find` lists runs (by number range, type, status,
+  or subsystem). `daq__runlog_run` gives one run's summary, transitions, and
+  operator comments, and is where **event counts** come from: its `totals`
+  (events, on-spill, off-spill, null) are summed over all subruns, and
+  `include=["totals", "subruns"]` adds per-subrun counts. Use it for any "how
+  many events" question about a run.
+  `daq__runlog_config` shows a run's configuration.
+  `daq__list_run_records` / `daq__get_run_record` read the DAQInterface run
+  records (ranks, metadata, FHiCL); they have no event counts.
 - **Front-end boards:** `daq__get_fe_macro_list` lists the FE interfaces and
   their macros. You cannot run macros.
 - **Background:** `daq__list_docs` and `daq__read_doc` (may be sparse).
