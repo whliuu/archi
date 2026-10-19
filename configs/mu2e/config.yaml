@@ -116,7 +116,7 @@ mcp_servers:
 services:
   chat_app:
     agent_class: CMSCompOpsAgent          # the built-in ReAct RAG agent
-    agents_dir: configs/mu2e/agents       # mu2e-ops.md prompt + tools live here
+    agents_dir: configs/mu2e/agents       # agent prompts + tools; mu2e-ops-shift.md is the default
     client_timeout_seconds: 1800
     trained_on: "mu2e shifter & operations documentation"
 

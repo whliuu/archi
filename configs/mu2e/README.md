@@ -9,7 +9,9 @@ source docs.
 | File | Purpose |
 |------|---------|
 | `config.yaml` | Full deployment config (LLM, vector store, data sources). |
-| `agents/mu2e-ops.md` | Agent persona + RAG tools for the assistant. |
+| `agents/mu2e-ops-shift.md` | Default agent: shift assistant with docs, DQM, run DB, ECL, metacat and live DAQ tools. |
+| `agents/mu2e-ops.md` | Documentation and offline-data agent (no live DAQ tools). |
+| `agents/mu2e-ops_daq.md` | Live DAQ agent (`daq__*` tools only). |
 | `sources/mu2e_links.list` | URLs / git repos / SSO pages to ingest. |
 | `local_docs/` | Drop PDFs / Word / Markdown shifter manuals here. |
 | `secrets.env.example` | Template for credentials — copy to `secrets.env`. |
@@ -94,6 +96,11 @@ Until then, leave `sources.sso.enabled` and `links.selenium_scraper.enabled` at
 
 ## Customizing the assistant
 
-Edit `agents/mu2e-ops.md` — the YAML frontmatter sets the RAG `tools`, and the
+Edit the files in `agents/` — the YAML frontmatter sets the `tools`, and the
 Markdown body is the system prompt. Tune tone, escalation guidance, and which
 tools are available there.
+
+The agent selected in the chat UI is one shared setting for the whole
+deployment (stored in the `dynamic_config` table). When none has been
+selected, archi uses the first file in `agents/` by byte order, which is why
+the default agent is named `mu2e-ops-shift.md` (`-` sorts before `.` and `_`).

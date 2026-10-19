@@ -1,6 +1,7 @@
 ---
-# The file name must sort after mu2e-ops.md: archi falls back to the first
-# agent file (alphabetically) when no agent has been selected in the UI.
+# The file name must sort after mu2e-ops-shift.md: archi falls back to the
+# first agent file (alphabetically) when no agent has been selected in the UI,
+# and the shift agent is meant to be that default.
 name: mu2e DAQ Operations Assistant
 tools:
   - mcp:daq
