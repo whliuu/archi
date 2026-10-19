@@ -37,6 +37,46 @@ def mcp_http_client_factory(**kwargs) -> httpx.AsyncClient:
     return httpx.AsyncClient(**kwargs)
 
 
+# archi-only server fields that langchain-mcp-adapters doesn't understand.
+# These are consumed by the compose template (sidecars), the legacy stdio
+# install path, or post-load tool customization — the MCP client itself only
+# knows about transport-specific fields.
+_ARCHI_ONLY_FIELDS = {
+    "env_from_secrets", "host_file_mounts", "build_context", "image", "path", "skill",
+    "shared_volume", "include_tools", "max_output_chars",
+}
+
+
+def build_client_config(server_cfg: Dict[str, Any]) -> Tuple[Dict[str, Any], List[str]]:
+    """
+    Turn one configured MCP server into the connection config the
+    langchain-mcp-adapters client expects.
+
+    Returns:
+        cfg: the client connection config
+        missing: header secrets referenced but not set; the server can't be
+            used while this is non-empty
+    """
+    cfg = {k: v for k, v in server_cfg.items() if k not in _ARCHI_ONLY_FIELDS}
+    missing: List[str] = []
+    transport = cfg.get("transport")
+    if transport == "stdio":
+        # stdio subprocesses inherit nothing by default (mcp.client.stdio uses
+        # an empty env). Forward the parent process env so stdio MCP servers see
+        # what they need.
+        cfg["env"] = {**os.environ, **(cfg.get("env") or {})}
+    else:
+        # For HTTP-based transports, `env` is for the sidecar container (compose),
+        # not the MCP client connection — drop it here.
+        if (server_cfg.get("env") or {}).get("httpx_client_factory"):
+            verify = server_cfg.get("host_file_mounts")[0]
+            cfg["httpx_client_factory"] = lambda verify=verify, **kwargs: mcp_http_client_factory(verify=verify, **kwargs)
+        cfg.pop("env", None)
+        if cfg.get("headers"):
+            cfg["headers"], missing = resolve_header_secrets(cfg["headers"])
+    return cfg, missing
+
+
 async def initialize_mcp_client(
     config: Optional[Dict[str, Any]] = None,
     server_names: Optional[List[str]] = None,
@@ -64,14 +104,6 @@ async def initialize_mcp_client(
         logger.info("No MCP servers configured.")
         return None, [], ""
 
-    # Strip archi-only fields that langchain-mcp-adapters doesn't understand.
-    # These are consumed by the compose template (sidecars), the legacy stdio
-    # install path, or post-load tool customization — the MCP client itself only
-    # knows about transport-specific fields.
-    _archi_only_fields = {
-        "env_from_secrets", "host_file_mounts", "build_context", "image", "path", "skill",
-        "shared_volume", "include_tools", "max_output_chars",
-    }
     client_configs: dict[str, dict] = {}
     server_skills: dict[str, str] = {}
     for name, server_cfg in mcp_servers.items():
@@ -82,27 +114,12 @@ async def initialize_mcp_client(
             if skill_content:
                 server_skills[name] = skill_content
 
-        cfg = {k: v for k, v in server_cfg.items() if k not in _archi_only_fields}
-        transport = cfg.get("transport")
-        if transport == "stdio":
-            # stdio subprocesses inherit nothing by default (mcp.client.stdio uses
-            # an empty env). Forward the parent process env so stdio MCP servers see
-            # what they need.
-            cfg["env"] = {**os.environ, **(cfg.get("env") or {})}
-        else:
-            # For HTTP-based transports, `env` is for the sidecar container (compose),
-            # not the MCP client connection — drop it here.
-            if (server_cfg.get("env") or {}).get("httpx_client_factory"):
-                verify = server_cfg.get("host_file_mounts")[0]
-                cfg["httpx_client_factory"] = lambda verify=verify, **kwargs: mcp_http_client_factory(verify=verify, **kwargs)
-            cfg.pop("env", None)
-            if cfg.get("headers"):
-                cfg["headers"], missing = resolve_header_secrets(cfg["headers"])
-                if missing:
-                    logger.warning(
-                        f"Skipping MCP server '{name}': header secret(s) not set: {missing}"
-                    )
-                    continue
+        cfg, missing = build_client_config(server_cfg)
+        if missing:
+            logger.warning(
+                f"Skipping MCP server '{name}': header secret(s) not set: {missing}"
+            )
+            continue
         client_configs[name] = cfg
 
     logger.info(f"Configuring MCP client with servers: {list(client_configs.keys())}")

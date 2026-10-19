@@ -48,7 +48,7 @@ from src.data_manager.data_viewer_service import DataViewerService
 from src.data_manager.vectorstore.manager import VectorStoreManager
 from src.utils.env import read_secret, read_or_create_persistent_secret
 from src.utils.logging import get_logger
-from src.utils.config_access import get_full_config, get_services_config, get_global_config, get_dynamic_config
+from src.utils.config_access import get_full_config, get_services_config, get_global_config, get_dynamic_config, get_mcp_servers_config
 from src.utils.config_service import ConfigService, StaticConfig
 from src.utils.sql import (
     SQL_INSERT_CONVO, SQL_INSERT_FEEDBACK, SQL_INSERT_TIMING, SQL_QUERY_CONVO,
@@ -73,6 +73,7 @@ from src.archi.pipelines.agents.tools.playbook_tools import (
 )
 from src.interfaces.chat_app.document_utils import *
 from src.interfaces.chat_app.evaluation_routes import register_evaluations
+from src.interfaces.chat_app.kb_figures import KB_SERVER_NAME, FigureNotFound, get_kb_figure
 from src.interfaces.chat_app.playbook_routes import register_playbooks
 from src.interfaces.chat_app.service_alerts import (
     register_service_alerts, get_active_banner_alerts, is_alert_manager,
@@ -2804,6 +2805,7 @@ class FlaskAppWrapper(object):
         self.add_endpoint('/chat', 'index', self.require_auth(self.index))
         self.add_endpoint('/api/get_chat_response', 'get_chat_response', self.require_auth(self.get_chat_response), methods=["POST"])
         self.add_endpoint('/api/get_chat_response_stream', 'get_chat_response_stream', self.require_auth(self.get_chat_response_stream), methods=["POST"])
+        self.add_endpoint('/api/kb-figure', 'kb_figure', self.require_auth(self.kb_figure), methods=["GET"])
         self.add_endpoint('/terms', 'terms', self.require_auth(self.terms))
         self.add_endpoint('/api/like', 'like', self.require_auth(self.like),  methods=["POST"])
         self.add_endpoint('/api/dislike', 'dislike', self.require_auth(self.dislike),  methods=["POST"])
@@ -3425,6 +3427,31 @@ class FlaskAppWrapper(object):
 
     def health(self):
         return jsonify({"status": "OK"}), 200
+
+    def kb_figure(self):
+        """
+        Serve one knowledge-base figure (e.g. a plot from a DocDB talk) for the
+        markdown images the agent puts in its answers: `/api/kb-figure?id=<source_id>/<doc_id>`.
+        See kb_figures.py.
+        """
+        identifier = (request.args.get('id') or '').strip()
+        if not identifier:
+            return jsonify({'error': 'id is required'}), 400
+        server_cfg = get_mcp_servers_config().get(KB_SERVER_NAME)
+        if not server_cfg:
+            return jsonify({'error': 'Knowledge base is not configured'}), 404
+        try:
+            data, mime_type = get_kb_figure(identifier, server_cfg)
+        except FigureNotFound as exc:
+            return jsonify({'error': str(exc)}), 404
+        except Exception as exc:
+            logger.warning(f"Could not fetch kb figure {identifier!r}: {exc}")
+            return jsonify({'error': 'Could not fetch the figure from the knowledge base'}), 502
+        response = Response(data, mimetype=mime_type)
+        # Figures don't change once extracted; let the browser keep them so
+        # reopening a conversation doesn't refetch every plot.
+        response.headers['Cache-Control'] = 'private, max-age=86400'
+        return response
 
     def get_permissions(self):
         """API endpoint to get current user's permissions"""

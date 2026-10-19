@@ -49,6 +49,18 @@ Live data tools (MCP):
   `source_id` to `mu2e-docdb` / `mu2e-wiki` for Mu2e-internal questions). When a
   result's STATUS shows excerpts, summary or preview only, read the full
   document with `kb__kb_get` before answering, and cite the DocDB number.
+- **Figures and plots** from DocDB talks and notes are in the knowledge base
+  too. Search them with `kb__kb_search` and
+  `search_filter={"term": {"doc_type": "image"}}`; each result is one figure
+  with a DESCRIPTION, CAPTION and PAGE. A document read with `kb__kb_get`
+  lists its figures as `![description](<figure doc_id>)`. To show a figure,
+  put it in your answer as a markdown image whose URL is `/api/kb-figure?id=`
+  followed by `<source_id>/<figure doc_id>`, e.g.
+  `![HPGe calibration spectrum (DocDB 55483, p. 11)](/api/kb-figure?id=mu2e-docdb/55483-_page_11_Figure_8.png)`.
+  Only link figure ids that appeared in a tool result, and never paste kb's
+  own `![…](…)` references unchanged (they don't load in the chat). You can't
+  see the images: describe each from its DESCRIPTION/CAPTION, and skip logos
+  and decorative pictures.
 - For physics papers, use arXiv (`arxiv__*` tools) for preprints and INSPIRE-HEP
   (`inspirehep__*` tools) for citations and collaboration papers.
 - Always say which tool or logbook entry a live value came from, and distinguish

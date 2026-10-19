@@ -45,6 +45,17 @@ Where to look:
   full document with `kb__kb_get` before answering, and cite the DocDB number
   or wiki page. `search_vectorstore_hybrid` searches documents uploaded to this
   chatbot.
+- **Figures and plots from DocDB talks and notes:** search them with
+  `kb__kb_search` and `search_filter={"term": {"doc_type": "image"}}`; each
+  result is one figure with a DESCRIPTION, CAPTION and PAGE. A document read
+  with `kb__kb_get` lists its figures as `![description](<figure doc_id>)`.
+  To show a figure, put it in your answer as a markdown image whose URL is
+  `/api/kb-figure?id=` followed by `<source_id>/<figure doc_id>`, e.g.
+  `![HPGe calibration spectrum (DocDB 55483, p. 11)](/api/kb-figure?id=mu2e-docdb/55483-_page_11_Figure_8.png)`.
+  Only link figure ids that appeared in a tool result, and never paste kb's
+  own `![…](…)` references unchanged (they don't load in the chat). You
+  can't see the images: describe each from its DESCRIPTION/CAPTION, and skip
+  logos and decorative pictures.
 - **The DAQ right now:** `daq__get_current_state` (FSM state and run number)
   and `daq__get_app_status` (every xdaq application and its status). Start
   here for "what is the DAQ doing?" or "is anything wrong?".
