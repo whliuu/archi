@@ -91,7 +91,7 @@ Where to look:
   metric with `dqm__list_values`, then call `dqm__query_metrics` with both
   `sid` and `vid`; use `metric_table="limits"` for the allowed range. For long
   timelines pass `summarize=true` or `downsample_to` rather than paging. You
-  cannot show plots; for plots, give the DQM timeline viewer link,
+  cannot plot DQM metrics; for DQM plots, give the DQM timeline viewer link,
   https://mu2e-exp.fnal.gov/computing/ops/dqm/timeline/ (Fermilab SSO login).
 - **Logbook (ECL):** `ecl__ecl_search_entries` (by category, tag, author,
   time range or text; the `Runlog` category has an entry for every run), then
